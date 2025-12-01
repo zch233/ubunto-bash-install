@@ -86,6 +86,14 @@ curl -fsSL https://fnm.vercel.app/install | bash || {
 echo 'eval "$(fnm env --use-on-cd --shell bash)"' >> "$HOME/.bashrc"
 echo "✅ fnm 安装完成，已配置环境变量"
 
+# 关键修改：统一更新 apt 源（在所有 apt-get install 前执行一次）
+echo -e "\n🔧 正在更新 apt 软件源缓存..."
+sudo apt-get update &> /dev/null || {
+  echo "❌ apt 源更新失败！请检查网络连接"
+  exit 1
+}
+echo "✅ apt 源更新完成"
+
 # 5. 安装 Node.js LTS（卸载旧版避免冲突）
 echo -e "\n🔧 开始安装 Node.js LTS..."
 if command -v node &> /dev/null; then
@@ -167,7 +175,6 @@ echo -e "\n🔧 开始配置 Git..."
 # 检测 Git 是否安装，未安装则安装最新版
 if ! command -v git &> /dev/null; then
   echo "⚠️  未检测到 Git，正在安装最新版..."
-  sudo apt-get update &> /dev/null
   sudo apt-get install -y git || {
     echo "❌ Git 安装失败！"
     exit 1
