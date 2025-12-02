@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -eo pipefail  # 增强错误处理：未定义变量、管道错误都退出
+set -eo pipefail  # 增强错误处理：管道错误退出（去掉 -u，避免未定义变量报错）
 # set -x             # 可选：执行时输出每个命令（方便调试，取消注释即可）
 
 # 阿里云 Codeup 镜像地址（统一配置，方便后续修改）
@@ -219,6 +219,38 @@ git config --global core.ignorecase false  # 开启大小写敏感（区分文�
 echo -e "\n✅ Git 配置完成，当前全局配置："
 git config --global --list | grep -E 'user.name|user.email|core.autocrlf|core.quotepath|core.ignorecase'
 
+# 新增：SSH 密钥检测与生成（核心步骤）
+echo -e "\n🔑 开始配置 SSH 密钥（用于 Git 仓库免密访问）..."
+SSH_KEY_ED25519="$HOME/.ssh/id_ed25519.pub"
+SSH_KEY_RSA="$HOME/.ssh/id_rsa.pub"
+SSH_KEY_EXISTS=false
+ACTIVE_SSH_KEY=""
+
+# 检测是否已存在 SSH 公钥
+if [ -f "$SSH_KEY_ED25519" ]; then
+  echo "✅ 已检测到 ed25519 类型 SSH 密钥"
+  SSH_KEY_EXISTS=true
+  ACTIVE_SSH_KEY="$SSH_KEY_ED25519"
+elif [ -f "$SSH_KEY_RSA" ]; then
+  echo "✅ 已检测到 rsa 类型 SSH 密钥"
+  SSH_KEY_EXISTS=true
+  ACTIVE_SSH_KEY="$SSH_KEY_RSA"
+else
+  echo "⚠️  未检测到 SSH 密钥，正在生成 ed25519 类型密钥（更安全）..."
+  # 生成 ed25519 密钥，注释为 Git 配置的邮箱，全程静默（无需交互）
+  ssh-keygen -t ed25519 -C "$GIT_USER_EMAIL" -N "" -f "$HOME/.ssh/id_ed25519" &> /dev/null
+  echo "✅ SSH 密钥生成完成！"
+  SSH_KEY_EXISTS=true
+  ACTIVE_SSH_KEY="$SSH_KEY_ED25519"
+fi
+
+# 输出 SSH 公钥内容（方便用户复制到 Codeup/GitHub 平台）
+echo -e "\n📋 你的 SSH 公钥（请复制到 Codeup/GitHub 仓库的 SSH 密钥配置中）："
+echo "----------------------------------------------------------------------"
+cat "$ACTIVE_SSH_KEY"
+echo "----------------------------------------------------------------------"
+echo "💡 提示：公钥已保存到 $ACTIVE_SSH_KEY，可随时通过 'cat $ACTIVE_SSH_KEY' 查看"
+
 # 12. 最终加载配置并验证所有工具
 echo -e "\n🔧 加载所有配置并验证安装结果..."
 source "$HOME/.bashrc"
@@ -258,4 +290,5 @@ echo "📌 关键信息汇总："
 echo "  - 镜像源：$(yrm current)（$CODEUP_REGISTRY）"
 echo "  - npm/yarn 已登录 Codeup 镜像"
 echo "  - Git 用户名：$GIT_USER_NAME，邮箱：$GIT_USER_EMAIL"
+echo "  - SSH 公钥路径：$ACTIVE_SSH_KEY（已在上文输出，可复制到代码平台）"
 echo "  - 所有别名、函数、配置已生效，可直接使用"
