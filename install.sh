@@ -16,7 +16,7 @@ declare -A ALIAS_MAP=(
   ["gk"]="git cherry-pick - 选择性合并指定提交记录"
   ["ys"]="yarn dev | yarn serve - 启动 yarn 开发/预览服务（根据项目配置生效）"
   ["code"]="cursor - 用 Cursor 编辑器打开当前目录"
-  ["gg"]="gupo-deploy -a -p - 执行 gupo 部署命令（全量部署 + 保持参数）"
+  ["gg"]="gupo-deploy -a -p - 执行 gupo-deploy 部署命令（全量部署 + 保持参数）"
 )
 
 # 1. 备份 .bashrc（避免覆盖原有配置）
