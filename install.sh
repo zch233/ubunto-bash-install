@@ -1,10 +1,17 @@
 #!/bin/bash
 
-set -eo pipefail  # 增强错误处理：管道错误退出（去掉 -u，避免未定义变量报错）
+set -eo pipefail  # 增强错误处理：管道错误退出
 # set -x             # 可选：执行时输出每个命令（方便调试，取消注释即可）
 
-# 阿里云 Codeup 镜像地址（统一配置，方便后续修改）
+# ======================== 统一地址配置（所有地址集中管理）========================
+# 阿里云 Codeup 镜像地址
 CODEUP_REGISTRY="https://packages.aliyun.com/5eb3e37038076f00011bcd4a/npm/npm-registry/"
+# fnm 安装地址（优先 jsdelivr 镜像，失败回退官方）
+FNM_INSTALL_URL_MIRROR="https://cdn.jsdelivr.net/gh/Schniz/fnm@master/.ci/install.sh"
+FNM_INSTALL_URL_OFFICIAL="https://fnm.vercel.app/install"
+# Node.js LTS 源地址
+NODE_LTS_SETUP_URL="https://deb.nodesource.com/setup_lts.x"
+# ================================================================================
 
 # 定义别名清单（与 .bashrc 中的 alias 对应，用于最终输出说明）
 declare -A ALIAS_MAP=(
@@ -77,12 +84,21 @@ mv -f "$HOME/.bashrc.tmp" "$HOME/.bashrc"
 chmod 644 "$HOME/.bashrc"
 echo "✅ 已更新 .bashrc 配置（自定义配置在最前面）"
 
-# 4. 安装 fnm 并配置环境变量
+# 4. 安装 fnm 并配置环境变量（优化：优先镜像地址，失败回退官方）
 echo -e "\n🔧 开始安装 fnm..."
-curl -fsSL https://fnm.vercel.app/install | bash || {
-  echo "❌ fnm 安装失败！"
-  exit 1
-}
+# 先尝试镜像地址安装
+if curl -fsSL "$FNM_INSTALL_URL_MIRROR" | bash; then
+  echo "✅ fnm 镜像地址安装成功（使用：$FNM_INSTALL_URL_MIRROR）"
+else
+  echo "⚠️  fnm 镜像地址安装失败，尝试官方地址..."
+  # 镜像失败，回退官方地址
+  if curl -fsSL "$FNM_INSTALL_URL_OFFICIAL" | bash; then
+    echo "✅ fnm 官方地址安装成功（使用：$FNM_INSTALL_URL_OFFICIAL）"
+  else
+    echo "❌ fnm 所有地址安装失败！请检查网络或手动安装 fnm"
+    exit 1
+  fi
+fi
 echo 'eval "$(fnm env --use-on-cd --shell bash)"' >> "$HOME/.bashrc"
 echo "✅ fnm 安装完成，已配置环境变量"
 
@@ -100,7 +116,7 @@ if command -v node &> /dev/null; then
   echo "⚠️  检测到已安装 Node，正在卸载旧版..."
   sudo apt-get remove -y nodejs npm &> /dev/null
 fi
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - || {
+curl -fsSL "$NODE_LTS_SETUP_URL" | sudo -E bash - || {
   echo "❌ 添加 Node 源失败！"
   exit 1
 }
