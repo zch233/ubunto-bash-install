@@ -251,6 +251,107 @@ cat "$ACTIVE_SSH_KEY"
 echo "----------------------------------------------------------------------"
 echo "💡 提示：公钥已保存到 $ACTIVE_SSH_KEY，可随时通过 'cat $ACTIVE_SSH_KEY' 查看"
 
+# 新增：WSL 命令行代理配置（适配 Windows Clash）
+echo -e "\n🌐 开始配置 WSL 命令行代理（适配 Windows Clash）..."
+# 核心修改：通过 host.docker.internal 获取 Windows 物理 IP（你验证可用的方法）
+WINDOWS_IP=$(ping -c 1 host.docker.internal | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+
+# 容错处理：若自动获取失败，提示用户手动输入
+if [ -z "$WINDOWS_IP" ] || ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' &> /dev/null; then
+  echo "⚠️  自动获取 Windows IP 失败（host.docker.internal 解析失败）"
+  read -p "请输入 Windows 局域网 IP（例如：192.168.1.100）：" WINDOWS_IP
+  # 验证 IP 格式（必须是四段）
+  while ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' &> /dev/null; do
+    echo "❌ IP 格式不合法（必须是 x.x.x.x 四段）！"
+    read -p "请重新输入 Windows 局域网 IP：" WINDOWS_IP
+  done
+fi
+echo "✅ 已确认 Windows 主机 IP：$WINDOWS_IP"
+
+# 2. 交互式获取 Clash Socks5 端口（默认 7890，用户可修改）
+read -p "请输入 Windows Clash 的 Socks5 端口（默认 7890，直接回车使用默认值）：" CLASH_PORT
+CLASH_PORT=${CLASH_PORT:-7890}  # 若用户未输入，使用默认值 7890
+echo "✅ 已确认 Clash Socks5 端口：$CLASH_PORT"
+
+# 3. 定义代理地址（Socks5 协议 + HTTP 协议，适配所有工具）
+PROXY_SOCKS5="socks5://$WINDOWS_IP:$CLASH_PORT"
+PROXY_HTTP="http://$WINDOWS_IP:$CLASH_PORT"
+
+# 4. 写入代理环境变量到 .bashrc（终端启动自动生效，修复变量引用问题）
+cat << EOF >> "$HOME/.bashrc"
+
+# -------------------------- WSL 代理配置（Clash）--------------------------
+# 基础代理地址（通过 host.docker.internal 自动获取）
+PROXY_SOCKS5="$PROXY_SOCKS5"
+PROXY_HTTP="$PROXY_HTTP"
+
+# 全局环境变量（适配终端命令、工具链）
+export ALL_PROXY=\$PROXY_HTTP  # 优先用 HTTP 代理，兼容性更好
+export HTTP_PROXY=\$PROXY_HTTP
+export HTTPS_PROXY=\$PROXY_HTTP
+export SOCKS_PROXY=\$PROXY_SOCKS5
+
+# 国内域名/IP 不走代理（优化访问速度，避免冲突）
+export NO_PROXY="localhost,127.0.0.1,172.0.0.0/8,192.168.0.0/16,.aliyun.com,.aliyuncs.com,.codeup.aliyun.com,.gupo.com.cn,packages.aliyun.com"
+
+# 代理控制命令（手动开关）
+proxy-on() {
+  export ALL_PROXY=\$PROXY_HTTP
+  export HTTP_PROXY=\$PROXY_HTTP
+  export HTTPS_PROXY=\$PROXY_HTTP
+  export SOCKS_PROXY=\$PROXY_SOCKS5
+  echo "✅ 代理已开启（\$PROXY_SOCKS5）"
+}
+
+proxy-off() {
+  unset ALL_PROXY HTTP_PROXY HTTPS_PROXY SOCKS_PROXY
+  echo "✅ 代理已关闭"
+}
+
+# 增强版代理测试（输出详细连接信息）
+proxy-test() {
+  echo -e "\n正在测试代理连通性（访问 Google 验证）..."
+  echo "  Windows IP：$WINDOWS_IP"
+  echo "  代理地址：\$PROXY_SOCKS5"
+  echo "  超时时间：5 秒"
+
+  # 输出关键连接日志，方便排查
+  curl -v --connect-timeout 5 https://www.google.com 2>&1 | grep -E 'Connected|Failed|timeout|refused|HTTP/'
+
+  if curl -s --connect-timeout 5 https://www.google.com &> /dev/null; then
+    echo "✅ 代理测试成功！可正常访问外网"
+  else
+    echo "❌ 代理测试失败！请检查："
+    echo "  1. Windows Clash 是否已启动并开启「允许局域网连接」"
+    echo "  2. Clash 端口（$CLASH_PORT）是否与配置一致"
+    echo "  3. Windows 防火墙是否放行 $CLASH_PORT 端口"
+    echo "  4. Clash 节点是否可用（浏览器访问 Google 验证）"
+  fi
+}
+# --------------------------------------------------------------------------
+EOF
+
+# 5. 配置 Git 代理（单独配置，部分 Git 版本不读取环境变量）
+git config --global http.proxy "$PROXY_HTTP"
+git config --global https.proxy "$PROXY_HTTP"
+git config --global http.sslVerify false  # 避免代理导致的 SSL 证书校验失败
+echo "✅ Git 代理配置完成（使用 $PROXY_HTTP）"
+
+# 6. 配置 npm/yarn/pnpm 代理（国内镜像已配置，此处可选，避免冲突）
+npm config set proxy "$PROXY_HTTP" || true
+npm config set https-proxy "$PROXY_HTTP" || true
+npm config set strict-ssl false || true
+yarn config set proxy "$PROXY_HTTP" || true
+yarn config set https-proxy "$PROXY_HTTP" || true
+pnpm config set proxy "$PROXY_HTTP" || true
+pnpm config set https-proxy "$PROXY_HTTP" || true
+echo "✅ npm/yarn/pnpm 代理配置完成"
+
+# 7. 代理生效与测试
+source "$HOME/.bashrc"  # 立即加载代理配置
+echo -e "\n🔍 正在测试代理连通性..."
+proxy-test
+
 # 12. 最终加载配置并验证所有工具
 echo -e "\n🔧 加载所有配置并验证安装结果..."
 
@@ -279,10 +380,13 @@ for alias_key in "${!ALIAS_MAP[@]}"; do
   echo "  - $alias_key：${ALIAS_MAP[$alias_key]}"
 done
 
-# 补充端口转发函数说明
+# 补充端口转发函数 + 代理命令说明
 echo -e "\n⚙️ 常用函数/命令说明："
 echo "  - port-add [端口号]：创建 WSL 端口转发（示例：port-add 8080，让外部访问 WSL 的 8080 端口）"
 echo "  - port-del [端口号]：删除指定端口转发（示例：port-del 8080）"
+echo "  - proxy-on：开启代理（终端启动默认已开启）"
+echo "  - proxy-off：关闭代理（访问国内服务时可关闭）"
+echo "  - proxy-test：测试代理连通性（访问 Google 验证）"
 
 echo -e "\n🎉 所有操作完成！重启终端或执行 'source ~/.bashrc' 即可使用所有配置～"
 echo "📌 关键信息汇总："
@@ -290,4 +394,5 @@ echo "  - 镜像源：$(yrm current)（$CODEUP_REGISTRY）"
 echo "  - npm/yarn 已登录 Codeup 镜像"
 echo "  - Git 用户名：$GIT_USER_NAME，邮箱：$GIT_USER_EMAIL"
 echo "  - SSH 公钥路径：$ACTIVE_SSH_KEY（已在上文输出，可复制到代码平台）"
+echo "  - WSL 代理配置：$PROXY_SOCKS5（Clash 需保持启动并开启局域网连接）"
 echo "  - 所有别名、函数、配置已生效，可直接使用"
