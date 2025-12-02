@@ -39,9 +39,9 @@ alias code="cursor"
 alias gg="gupo-deploy -a -p"
 
 # 端口转发函数：动态获取 172 开头的 WSL IP（无需指定网卡名）
-add-port() {
+port-add() {
   if [ -z "$1" ]; then
-    echo "❌ 请指定端口号（示例：add-port 23355）"
+    echo "❌ 请指定端口号（示例：port-add 23355）"
     return 1
   fi
 
@@ -59,9 +59,9 @@ add-port() {
 }
 
 # 配套删除函数
-del-port() {
+port-del() {
   if [ -z "$1" ]; then
-    echo "❌ 请指定端口号（示例：del-port 23355）"
+    echo "❌ 请指定端口号（示例：port-del 23355）"
     return 1
   fi
 
@@ -253,7 +253,6 @@ echo "💡 提示：公钥已保存到 $ACTIVE_SSH_KEY，可随时通过 'cat $A
 
 # 12. 最终加载配置并验证所有工具
 echo -e "\n🔧 加载所有配置并验证安装结果..."
-source "$HOME/.bashrc"
 
 # 验证关键工具是否可用
 verify_tool() {
@@ -281,9 +280,9 @@ for alias_key in "${!ALIAS_MAP[@]}"; do
 done
 
 # 补充端口转发函数说明
-echo -e "\n⚙️ 常用函数说明："
-echo "  - add-port [端口号]：创建 WSL 端口转发（示例：add-port 8080，让外部访问 WSL 的 8080 端口）"
-echo "  - del-port [端口号]：删除指定端口转发（示例：del-port 8080）"
+echo -e "\n⚙️ 常用函数/命令说明："
+echo "  - port-add [端口号]：创建 WSL 端口转发（示例：port-add 8080，让外部访问 WSL 的 8080 端口）"
+echo "  - port-del [端口号]：删除指定端口转发（示例：port-del 8080）"
 
 echo -e "\n🎉 所有操作完成！重启终端或执行 'source ~/.bashrc' 即可使用所有配置～"
 echo "📌 关键信息汇总："
