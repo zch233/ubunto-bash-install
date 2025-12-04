@@ -173,6 +173,15 @@ proxy-off() {
 }
 
 proxy-test() {
+  # 关键修改：函数内先检测代理是否开启，未开启则自动开启
+  if [ -z "\$ALL_PROXY" ]; then
+    echo -e "\n🔌 检测到代理未开启，正在自动开启..."
+    proxy-on
+  else
+    echo -e "\n🔌 代理已处于开启状态（当前代理：\$ALL_PROXY）"
+  fi
+
+  # 开始代理连通性测试
   echo -e "\n正在测试代理连通性（访问 Google 验证）..."
   echo "  Windows IP：$WINDOWS_IP"
   echo "  代理地址：\$PROXY_SOCKS5"
@@ -194,6 +203,8 @@ proxy-test() {
 EOF
 
   echo "✅ 代理配置完成（$PROXY_SOCKS5）"
+  # 加载刚写入的 .bashrc 配置，让 proxy-test/proxy-on/proxy-off 函数生效
+  source "$HOME/.bashrc"
   proxy-test
 else
   echo -e "\n⚠️  已跳过 WSL 代理配置"
