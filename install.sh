@@ -162,7 +162,7 @@ port-reset() {
 # 端口查看函数
 port-show() {
   echo "✅ 正在查看端口转发"
-  powershell.exe -Command 'Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command ""netsh interface portproxy show all"""'
+  powershell.exe -Command 'Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command ""netsh interface portproxy show all; Read-Host '查看完成，按Enter关闭窗口'"""'
 }
 EOF
 
