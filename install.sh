@@ -13,6 +13,7 @@ FNM_INSTALL_URL_OFFICIAL="https://fnm.vercel.app/install"
 NODE_LTS_SETUP_URL="https://deb.nodesource.com/setup_lts.x"
 
 # 跳过参数默认值（false=不跳过）
+SKIP_FLAG=false
 SKIP_ALIAS=false
 SKIP_FNM=false
 SKIP_APT_UPDATE=false
@@ -88,7 +89,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # 输出跳过配置摘要
-echo "📋 脚本执行配置（跳过以下步骤）："
+echo "📋 脚本执行配置："
 [ "$SKIP_ALIAS" = true ] && echo "  - 跳过 .bashrc 别名配置"
 [ "$SKIP_FNM" = true ] && echo "  - 跳过 fnm 安装"
 [ "$SKIP_APT_UPDATE" = true ] && echo "  - 跳过 apt-get 更新"
