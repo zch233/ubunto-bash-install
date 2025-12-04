@@ -3,7 +3,7 @@
 set -eo pipefail  # 增强错误处理：管道错误退出
 # set -x             # 可选：执行时输出每个命令（方便调试，取消注释即可）
 
-# ======================== 统一地址配置（所有地址集中管理）========================
+# ======================== 配置区（统一管理地址/参数）========================
 # 阿里云 Codeup 镜像地址
 CODEUP_REGISTRY="https://packages.aliyun.com/5eb3e37038076f00011bcd4a/npm/npm-registry/"
 # fnm 安装地址（优先 jsdelivr 镜像，失败回退官方）
@@ -11,9 +11,22 @@ FNM_INSTALL_URL_MIRROR="https://cdn.jsdelivr.net/gh/Schniz/fnm@master/.ci/instal
 FNM_INSTALL_URL_OFFICIAL="https://fnm.vercel.app/install"
 # Node.js LTS 源地址
 NODE_LTS_SETUP_URL="https://deb.nodesource.com/setup_lts.x"
-# ================================================================================
 
-# 定义别名清单（与 .bashrc 中的 alias 对应，用于最终输出说明）
+# 跳过参数默认值（false=不跳过）
+SKIP_ALIAS=false
+SKIP_FNM=false
+SKIP_APT_UPDATE=false
+SKIP_NODE=false
+SKIP_NPM_TOOLS=false
+SKIP_NPM_REGISTRY=false
+SKIP_NPM_LOGIN=false
+SKIP_YARN_LOGIN=false
+SKIP_GUPO_TOOLS=false
+SKIP_GIT_CONFIG=false
+SKIP_SSH_KEY=false
+SKIP_PROXY=false
+
+# 别名清单
 declare -A ALIAS_MAP=(
   ["gp"]="git push - 推送代码到远程仓库"
   ["gll"]="git pull - 拉取远程仓库代码到本地"
@@ -25,14 +38,82 @@ declare -A ALIAS_MAP=(
   ["code"]="cursor - 用 Cursor 编辑器打开当前目录"
   ["gg"]="gupo-deploy -a -p - 执行 gupo-deploy 部署命令（全量部署 + 保持参数）"
 )
+# ================================================================================
 
-# 1. 备份 .bashrc（避免覆盖原有配置）
-BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
-cp "$HOME/.bashrc" "$BACKUP_FILE"
-echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
+# ======================== 工具函数（简化重复逻辑）========================
+# 检测命令是否存在
+command_exists() {
+  command -v "$1" &> /dev/null
+}
 
-# 2. 写入自定义配置到临时文件（支持 $USER 解析，修正函数示例）
-cat << EOF > "$HOME/.bashrc.tmp"
+# 验证工具安装
+verify_tool() {
+  local tool=$1
+  if command_exists "$tool"; then
+    local version=$("$tool" --version 2>&1 | head -n 1 | cut -d ' ' -f 2 | cut -d ',' -f 1)
+    echo "  ✅ $tool：$version"
+  else
+    echo "  ❌ $tool：未安装成功"
+  fi
+}
+
+# 提示用户确认（可选继续）
+confirm_continue() {
+  local msg="$1"
+  read -p "$msg（y/N）：" choice
+  case "$choice" in
+    [Yy]* ) return 0;;
+    * ) echo "❌ 用户取消，退出脚本"; exit 1;;
+  esac
+}
+# ================================================================================
+
+# ======================== 参数解析（处理跳过选项）========================
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skipAlias) SKIP_ALIAS=true; shift;;
+    --skipFnm) SKIP_FNM=true; shift;;
+    --skipAptUpdate) SKIP_APT_UPDATE=true; shift;;
+    --skipNode) SKIP_NODE=true; shift;;
+    --skipNpmTools) SKIP_NPM_TOOLS=true; shift;;
+    --skipNpmRegistry) SKIP_NPM_REGISTRY=true; shift;;
+    --skipNpmLogin) SKIP_NPM_LOGIN=true; shift;;
+    --skipYarnLogin) SKIP_YARN_LOGIN=true; shift;;
+    --skipGupoTools) SKIP_GUPO_TOOLS=true; shift;;
+    --skipGitConfig) SKIP_GIT_CONFIG=true; shift;;
+    --skipSshKey) SKIP_SSH_KEY=true; shift;;
+    --skipProxy) SKIP_PROXY=true; shift;;
+    *) echo "❌ 未知参数：$1"; exit 1;;
+  esac
+done
+
+# 输出跳过配置摘要
+echo "📋 脚本执行配置（跳过以下步骤）："
+[ "$SKIP_ALIAS" = true ] && echo "  - 跳过 .bashrc 别名配置"
+[ "$SKIP_FNM" = true ] && echo "  - 跳过 fnm 安装"
+[ "$SKIP_APT_UPDATE" = true ] && echo "  - 跳过 apt-get 更新"
+[ "$SKIP_NODE" = true ] && echo "  - 跳过 Node.js 安装"
+[ "$SKIP_NPM_TOOLS" = true ] && echo "  - 跳过全局 npm 工具安装"
+[ "$SKIP_NPM_REGISTRY" = true ] && echo "  - 跳过 npm registry 镜像配置"
+[ "$SKIP_NPM_LOGIN" = true ] && echo "  - 跳过 npm 登录"
+[ "$SKIP_YARN_LOGIN" = true ] && echo "  - 跳过 yarn 登录"
+[ "$SKIP_GUPO_TOOLS" = true ] && echo "  - 跳过 gupo 工具安装"
+[ "$SKIP_GIT_CONFIG" = true ] && echo "  - 跳过 Git 配置"
+[ "$SKIP_SSH_KEY" = true ] && echo "  - 跳过 SSH 密钥配置"
+[ "$SKIP_PROXY" = true ] && echo "  - 跳过 WSL 代理配置"
+echo "========================================================================"
+
+# ======================== 核心步骤（带跳过逻辑）========================
+# 1. .bashrc 别名配置（--skipAlias 跳过）
+if [ "$SKIP_ALIAS" = false ]; then
+  echo -e "\n🔧 开始 .bashrc 配置..."
+  # 备份原有 .bashrc
+  BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$HOME/.bashrc" "$BACKUP_FILE"
+  echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
+
+  # 写入自定义配置
+  cat << EOF > "$HOME/.bashrc.tmp"
 echo "welcome $USER"
 
 alias gp="git push"
@@ -47,261 +128,293 @@ alias gg="gupo-deploy -a -p"
 
 # 端口转发函数：动态获取 172 开头的 WSL IP（无需指定网卡名）
 port-add() {
-  if [ -z "$1" ]; then
+  if [ -z "\$1" ]; then
     echo "❌ 请指定端口号（示例：port-add 23355）"
     return 1
   fi
-
-  local PORT="$1"
+  local PORT="\$1"
   local WSL_IP=\$(ip addr | grep -E 'inet\s' | awk '{print \$2}' | cut -d '/' -f 1 | grep '^172\.' | head -n 1)
-
   if [ -z "\$WSL_IP" ]; then
     echo "❌ 无法获取 172 开头的 WSL 内网 IP"
-    echo "  提示：执行 'ip addr' 查看所有 IP，确认 WSL 已分配内网地址"
     return 1
   fi
-
   echo "✅ 已获取 WSL IP：\$WSL_IP，转发端口：\$PORT"
   powershell.exe -Command 'Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command ""netsh interface portproxy add v4tov4 listenport='\$PORT' listenaddress=0.0.0.0 connectport='\$PORT' connectaddress='\$WSL_IP'; echo === 转发创建完成 ===; netsh interface portproxy show v4tov4 listenport='\$PORT'"""'
 }
 
-# 配套删除函数
+# 端口删除函数
 port-del() {
-  if [ -z "$1" ]; then
+  if [ -z "\$1" ]; then
     echo "❌ 请指定端口号（示例：port-del 23355）"
     return 1
   fi
-
-  local PORT="$1"
+  local PORT="\$1"
   echo "🗑️ 正在删除端口转发：\$PORT"
   powershell.exe -Command 'Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command ""netsh interface portproxy delete v4tov4 listenport='\$PORT' listenaddress=0.0.0.0; echo === 转发已删除 ===; netsh interface portproxy show v4tov4"""'
 }
 EOF
 
-# 3. 拼接原有 .bashrc 内容，替换原文件并修复权限
-cat "$HOME/.bashrc" >> "$HOME/.bashrc.tmp"
-mv -f "$HOME/.bashrc.tmp" "$HOME/.bashrc"
-chmod 644 "$HOME/.bashrc"
-echo "✅ 已更新 .bashrc 配置（自定义配置在最前面）"
-
-# 4. 安装 fnm 并配置环境变量（优化：优先镜像地址，失败回退官方）
-echo -e "\n🔧 开始安装 fnm..."
-# 先尝试镜像地址安装
-if curl -fsSL "$FNM_INSTALL_URL_MIRROR" | bash; then
-  echo "✅ fnm 镜像地址安装成功（使用：$FNM_INSTALL_URL_MIRROR）"
+  # 拼接原有 .bashrc 内容，替换原文件并修复权限
+  cat "$HOME/.bashrc" >> "$HOME/.bashrc.tmp"
+  mv -f "$HOME/.bashrc.tmp" "$HOME/.bashrc"
+  chmod 644 "$HOME/.bashrc"
+  echo "✅ 已更新 .bashrc 配置（自定义配置在最前面）"
 else
-  echo "⚠️  fnm 镜像地址安装失败，尝试官方地址..."
-  # 镜像失败，回退官方地址
-  if curl -fsSL "$FNM_INSTALL_URL_OFFICIAL" | bash; then
-    echo "✅ fnm 官方地址安装成功（使用：$FNM_INSTALL_URL_OFFICIAL）"
-  else
-    echo "❌ fnm 所有地址安装失败！请检查网络或手动安装 fnm"
-    exit 1
+  echo -e "\n⚠️  已跳过 .bashrc 别名配置"
+fi
+
+# 2. fnm 安装（--skipFnm 跳过）
+if [ "$SKIP_FNM" = false ]; then
+  echo -e "\n🔧 开始 fnm 安装..."
+  # 检测 unzip/curl，缺失则安装
+  if ! command_exists "unzip"; then
+    echo "⚠️  未检测到 unzip，正在安装..."
+    sudo apt-get update &> /dev/null
+    sudo apt-get install -y unzip &> /dev/null || {
+      echo "❌ unzip 安装失败！请检查网络"
+      exit 1
+    }
   fi
+  if ! command_exists "curl"; then
+    echo "⚠️  未检测到 curl，正在安装..."
+    sudo apt-get install -y curl &> /dev/null || {
+      echo "❌ curl 安装失败！请检查网络"
+      exit 1
+    }
+  fi
+  echo "✅ fnm 依赖（unzip + curl）已就绪"
+
+  # 安装 fnm（镜像优先）
+  if curl -fsSL "$FNM_INSTALL_URL_MIRROR" | bash; then
+    echo "✅ fnm 镜像地址安装成功"
+  elif curl -fsSL "$FNM_INSTALL_URL_OFFICIAL" | bash; then
+    echo "✅ fnm 官方地址安装成功"
+  else
+    echo "❌ fnm 安装失败！是否跳过？"
+    confirm_continue "继续执行其他步骤"
+  fi
+
+  # 配置环境变量
+  if ! grep -q 'eval "$(fnm env --use-on-cd --shell bash)"' "$HOME/.bashrc"; then
+    echo 'eval "$(fnm env --use-on-cd --shell bash)"' >> "$HOME/.bashrc"
+  fi
+  echo "✅ fnm 配置完成"
+else
+  echo -e "\n⚠️  已跳过 fnm 安装"
 fi
-echo 'eval "$(fnm env --use-on-cd --shell bash)"' >> "$HOME/.bashrc"
-echo "✅ fnm 安装完成，已配置环境变量"
 
-# 关键修改：统一更新 apt 源（在所有 apt-get install 前执行一次）
-echo -e "\n🔧 正在更新 apt 软件源缓存..."
-sudo apt-get update &> /dev/null || {
-  echo "❌ apt 源更新失败！请检查网络连接"
-  exit 1
-}
-echo "✅ apt 源更新完成"
-
-# 5. 安装 Node.js LTS（卸载旧版避免冲突）
-echo -e "\n🔧 开始安装 Node.js LTS..."
-if command -v node &> /dev/null; then
-  echo "⚠️  检测到已安装 Node，正在卸载旧版..."
-  sudo apt-get remove -y nodejs npm &> /dev/null
-fi
-curl -fsSL "$NODE_LTS_SETUP_URL" | sudo -E bash - || {
-  echo "❌ 添加 Node 源失败！"
-  exit 1
-}
-sudo apt-get install -y nodejs || {
-  echo "❌ Node.js 安装失败！"
-  exit 1
-}
-
-# 验证 Node/npm 基础安装
-if ! command -v node &> /dev/null || ! command -v npm &> /dev/null; then
-  echo "❌ Node.js/npm 安装失败！"
-  exit 1
-fi
-NODE_VERSION=$(node -v)
-NPM_VERSION=$(npm -v)
-echo "✅ Node.js LTS 安装成功："
-echo "  - Node 版本：$NODE_VERSION"
-echo "  - npm 版本：$NPM_VERSION"
-
-# 6. 全局安装 npm 工具包（pnpm/yarn/yrm/typescript/git-open）
-echo -e "\n🔧 开始安装全局 npm 工具包..."
-sudo npm install -g pnpm yarn yrm typescript git-open || {
-  echo "❌ 全局工具包安装失败！"
-  exit 1
-}
-echo "✅ 全局工具包安装完成（pnpm/yarn/yrm/typescript/git-open）"
-
-# 7. 配置 yrm 镜像（添加 Codeup 镜像并切换）
-echo -e "\n🔧 配置 yrm 镜像（Codeup 阿里云镜像）..."
-# 先检查 yrm 是否安装成功
-if ! command -v yrm &> /dev/null; then
-  echo "❌ yrm 未安装成功，无法配置镜像！"
-  exit 1
-fi
-# 添加 Codeup 镜像（--yes 自动确认覆盖已存在的镜像）
-yrm add codeup "$CODEUP_REGISTRY" --yes || {
-  echo "⚠️ Codeup 镜像已存在，跳过添加"
-}
-# 切换到 Codeup 镜像
-yrm use codeup || {
-  echo "❌ 切换到 Codeup 镜像失败！"
-  exit 1
-}
-echo "✅ yrm 镜像配置完成，当前使用：$(yrm current)"
-
-# 8. npm 登录（交互式输入账号密码）
-echo -e "\n🔐 请进行 npm 登录（使用 Codeup 账号密码）..."
-npm login --registry="$CODEUP_REGISTRY" || {
-  echo "❌ npm 登录失败！请检查账号密码或网络连接"
-  exit 1
-}
-echo "✅ npm 登录成功！"
-
-# 9. yarn 登录（交互式输入账号密码，与 npm 账号一致）
-echo -e "\n🔐 请进行 yarn 登录（使用与 npm 相同的 Codeup 账号密码）..."
-yarn login --registry="$CODEUP_REGISTRY" || {
-  echo "❌ yarn 登录失败！请检查账号密码或网络连接"
-  exit 1
-}
-echo "✅ yarn 登录成功！"
-
-# 10. 安装 gupo 系列工具（从 Codeup 镜像拉取）
-echo -e "\n🔧 开始安装 gupo 系列工具..."
-npm install -g gupo-deploy gupo-cli gupo-imagemin @gupo-admin/cli --registry="$CODEUP_REGISTRY" || {
-  echo "❌ gupo 工具安装失败！请检查登录状态或镜像地址"
-  exit 1
-}
-echo "✅ gupo 工具安装完成（gupo-deploy/gupo-cli/gupo-imagemin/@gupo-admin/cli）"
-
-# 11. Git 安装与配置（新增核心步骤）
-echo -e "\n🔧 开始配置 Git..."
-# 检测 Git 是否安装，未安装则安装最新版
-if ! command -v git &> /dev/null; then
-  echo "⚠️  未检测到 Git，正在安装最新版..."
-  sudo apt-get install -y git || {
-    echo "❌ Git 安装失败！"
+# 统一更新 apt 源（后续步骤依赖）
+if [ "$SKIP_APT_UPDATE" = false ]; then
+  echo -e "\n🔧 正在更新 apt-get 软件源..."
+  sudo apt-get update &> /dev/null || {
+    echo "❌ apt 源更新失败！请检查网络"
     exit 1
   }
-  echo "✅ Git 安装成功！"
-else
-  GIT_VERSION=$(git --version | awk '{print $3}')
-  echo "✅ 已检测到 Git（版本：$GIT_VERSION），跳过安装"
+  echo "✅ apt 源更新完成"
 fi
 
-# 交互式获取用户信息（中文提示）
-echo -e "\n📝 请配置 Git 全局用户信息（与云效/Codeup 绑定信息一致）"
-read -p "请输入你的中文名字（例如：张三）：" GIT_USER_NAME
-# 验证名字非空
-while [ -z "$GIT_USER_NAME" ]; do
-  echo "❌ 名字不能为空！"
-  read -p "请重新输入你的中文名字：" GIT_USER_NAME
-done
+# 3. Node.js 安装（--skipNode 跳过）
+if [ "$SKIP_NODE" = false ]; then
+  echo -e "\n🔧 开始 Node.js LTS 安装..."
+  # 卸载旧版
+  if command_exists "node"; then
+    echo "⚠️  检测到已安装 Node，正在卸载旧版..."
+    sudo apt-get remove -y nodejs npm &> /dev/null
+  fi
 
-read -p "请输入你的常用邮箱（需与云效/Codeup 绑定邮箱一致）：" GIT_USER_EMAIL
-# 验证邮箱非空且格式合法（简单校验）
-while [ -z "$GIT_USER_EMAIL" ] || ! echo "$GIT_USER_EMAIL" | grep -E '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' &> /dev/null; do
-  echo "❌ 邮箱格式不合法或为空！"
-  read -p "请重新输入你的常用邮箱：" GIT_USER_EMAIL
-done
-
-# npm yarn pnpm 全局配置
-# 先删除可能存在的重复项，再依次追加两个配置
-sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc && \
-echo 'always-auth=true' >> ~/.npmrc && \
-echo 'save-prefix=""' >> ~/.npmrc
-
-# 配置 Git 全局参数
-echo -e "\n⚙️ 正在应用 Git 全局配置..."
-git config --global core.autocrlf input  # 提交时转换为 LF，检出时不转换
-git config --global user.name "$GIT_USER_NAME"  # 配置用户名
-git config --global user.email "$GIT_USER_EMAIL"  # 配置邮箱
-git config --global core.quotepath false  # 防止文件名变成数字编码
-git config --global core.ignorecase false  # 开启大小写敏感（区分文件名大小写）
-
-# 验证 Git 配置
-echo -e "\n✅ Git 配置完成，当前全局配置："
-git config --global --list | grep -E 'user.name|user.email|core.autocrlf|core.quotepath|core.ignorecase'
-
-# 新增：SSH 密钥检测与生成（核心步骤）
-echo -e "\n🔑 开始配置 SSH 密钥（用于 Git 仓库免密访问）..."
-SSH_KEY_ED25519="$HOME/.ssh/id_ed25519.pub"
-SSH_KEY_RSA="$HOME/.ssh/id_rsa.pub"
-SSH_KEY_EXISTS=false
-ACTIVE_SSH_KEY=""
-
-# 检测是否已存在 SSH 公钥
-if [ -f "$SSH_KEY_ED25519" ]; then
-  echo "✅ 已检测到 ed25519 类型 SSH 密钥"
-  SSH_KEY_EXISTS=true
-  ACTIVE_SSH_KEY="$SSH_KEY_ED25519"
-elif [ -f "$SSH_KEY_RSA" ]; then
-  echo "✅ 已检测到 rsa 类型 SSH 密钥"
-  SSH_KEY_EXISTS=true
-  ACTIVE_SSH_KEY="$SSH_KEY_RSA"
+  # 安装新版
+  if curl -fsSL "$NODE_LTS_SETUP_URL" | sudo -E bash - && sudo apt-get install -y nodejs; then
+    NODE_VERSION=$(node -v)
+    NPM_VERSION=$(npm -v)
+    echo "✅ Node.js 安装成功："
+    echo "  - Node：$NODE_VERSION"
+    echo "  - npm：$NPM_VERSION"
+  else
+    echo "❌ Node.js 安装失败！是否跳过？"
+    confirm_continue "继续执行其他步骤"
+  fi
 else
-  echo "⚠️  未检测到 SSH 密钥，正在生成 ed25519 类型密钥（更安全）..."
-  # 生成 ed25519 密钥，注释为 Git 配置的邮箱，全程静默（无需交互）
-  ssh-keygen -t ed25519 -C "$GIT_USER_EMAIL" -N "" -f "$HOME/.ssh/id_ed25519" &> /dev/null
-  echo "✅ SSH 密钥生成完成！"
-  SSH_KEY_EXISTS=true
-  ACTIVE_SSH_KEY="$SSH_KEY_ED25519"
+  echo -e "\n⚠️  已跳过 Node.js 安装"
 fi
 
-# 输出 SSH 公钥内容（方便用户复制到 Codeup/GitHub 平台）
-echo -e "\n📋 你的 SSH 公钥（请复制到 Codeup/GitHub 仓库的 SSH 密钥配置中）："
-echo "----------------------------------------------------------------------"
-cat "$ACTIVE_SSH_KEY"
-echo "----------------------------------------------------------------------"
-echo "💡 提示：公钥已保存到 $ACTIVE_SSH_KEY，可随时通过 'cat $ACTIVE_SSH_KEY' 查看"
+# 4. 全局 npm 工具安装（--skipNpmTools 跳过）
+if [ "$SKIP_NPM_TOOLS" = false ] && command_exists "npm"; then
+  echo -e "\n🔧 开始全局 npm 工具安装..."
+  if sudo npm install -g pnpm yarn yrm typescript git-open; then
+    echo "✅ 全局工具安装完成（pnpm/yarn/yrm/typescript/git-open）"
+  else
+    echo "❌ 全局工具安装失败！是否跳过？"
+    confirm_continue "继续执行其他步骤"
+  fi
+elif [ "$SKIP_NPM_TOOLS" = true ]; then
+  echo -e "\n⚠️  已跳过全局 npm 工具安装"
+else
+  echo -e "\n⚠️  未检测到 npm，跳过全局工具安装"
+fi
 
-# 新增：WSL 命令行代理配置（适配 Windows Clash）
-echo -e "\n🌐 开始配置 WSL 命令行代理（适配 Windows Clash）..."
-# 核心修改：通过 host.docker.internal 获取 Windows 物理 IP（你验证可用的方法）
-WINDOWS_IP=$(ping -c 1 host.docker.internal | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+# 5. npm registry 镜像配置（--skipNpmRegistry 跳过）
+if [ "$SKIP_NPM_REGISTRY" = false ] && command_exists "yrm"; then
+  echo -e "\n🔧 开始 npm registry 镜像配置..."
+  yrm add codeup "$CODEUP_REGISTRY" --yes || echo "⚠️ Codeup 镜像已存在"
+  if yrm use codeup; then
+    echo "✅ yrm 切换到 Codeup 镜像：$(yrm current)"
+  else
+    echo "❌ yrm 配置失败！是否跳过？"
+    confirm_continue "继续执行其他步骤"
+  fi
+elif [ "$SKIP_NPM_REGISTRY" = true ]; then
+  echo -e "\n⚠️  已跳过 npm registry 镜像配置"
+else
+  echo -e "\n⚠️  未检测到 yrm，跳过镜像配置"
+fi
 
-# 容错处理：若自动获取失败，提示用户手动输入
-if [ -z "$WINDOWS_IP" ] || ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' &> /dev/null; then
-  echo "⚠️  自动获取 Windows IP 失败（host.docker.internal 解析失败）"
-  read -p "请输入 Windows 局域网 IP（例如：192.168.1.100）：" WINDOWS_IP
-  # 验证 IP 格式（必须是四段）
-  while ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' &> /dev/null; do
-    echo "❌ IP 格式不合法（必须是 x.x.x.x 四段）！"
-    read -p "请重新输入 Windows 局域网 IP：" WINDOWS_IP
+# 6. npm 登录（--skipNpmLogin 跳过）
+if [ "$SKIP_NPM_LOGIN" = false ] && command_exists "npm"; then
+  echo -e "\n🔐 开始 npm 登录（Codeup 账号）..."
+  if npm login --registry="$CODEUP_REGISTRY"; then
+    echo "✅ npm 登录成功"
+  else
+    echo "❌ npm 登录失败！是否跳过？"
+    confirm_continue "继续执行其他步骤"
+  fi
+elif [ "$SKIP_NPM_LOGIN" = true ]; then
+  echo -e "\n⚠️  已跳过 npm 登录"
+else
+  echo -e "\n⚠️  未检测到 npm，跳过登录"
+fi
+
+# 7. yarn 登录（--skipYarnLogin 跳过）
+if [ "$SKIP_YARN_LOGIN" = false ] && command_exists "yarn"; then
+  echo -e "\n🔐 开始 yarn 登录（与 npm 账号一致）..."
+  if yarn login --registry="$CODEUP_REGISTRY"; then
+    echo "✅ yarn 登录成功"
+  else
+    echo "❌ yarn 登录失败！是否跳过？"
+    confirm_continue "继续执行其他步骤"
+  fi
+elif [ "$SKIP_YARN_LOGIN" = true ]; then
+  echo -e "\n⚠️  已跳过 yarn 登录"
+else
+  echo -e "\n⚠️  未检测到 yarn，跳过登录"
+fi
+
+# 8. gupo 工具安装（--skipGupoTools 跳过）
+if [ "$SKIP_GUPO_TOOLS" = false ] && command_exists "npm"; then
+  echo -e "\n🔧 开始 gupo 工具安装..."
+  if npm install -g gupo-deploy gupo-cli gupo-imagemin @gupo-admin/cli --registry="$CODEUP_REGISTRY"; then
+    echo "✅ gupo 工具安装完成"
+  else
+    echo "❌ gupo 工具安装失败！是否跳过？"
+    confirm_continue "继续执行其他步骤"
+  fi
+elif [ "$SKIP_GUPO_TOOLS" = true ]; then
+  echo -e "\n⚠️  已跳过 gupo 工具安装"
+else
+  echo -e "\n⚠️  未检测到 npm，跳过 gupo 工具安装"
+fi
+
+# 9. Git 配置（--skipGitConfig 跳过）
+if [ "$SKIP_GIT_CONFIG" = false ]; then
+  echo -e "\n🔧 开始 Git 配置..."
+  # 安装 Git（未安装则安装）
+  if ! command_exists "git"; then
+    echo "⚠️  未检测到 Git，正在安装..."
+    sudo apt-get install -y git || {
+      echo "❌ Git 安装失败！"
+      exit 1
+    }
+  fi
+
+  # 配置用户信息
+  read -p "请输入 Git 用户名（中文名字）：" GIT_USER_NAME
+  while [ -z "$GIT_USER_NAME" ]; do
+    echo "❌ 用户名不能为空！"
+    read -p "重新输入：" GIT_USER_NAME
   done
+
+  read -p "请输入 Git 邮箱（与云效一致或者你常用的）：" GIT_USER_EMAIL
+  while [ -z "$GIT_USER_EMAIL" ] || ! echo "$GIT_USER_EMAIL" | grep -E '@'; do
+    echo "❌ 邮箱格式不合法！"
+    read -p "重新输入：" GIT_USER_EMAIL
+  done
+
+  # 应用 Git 配置
+  git config --global core.autocrlf input
+  git config --global user.name "$GIT_USER_NAME"
+  git config --global user.email "$GIT_USER_EMAIL"
+  git config --global core.quotepath false
+  git config --global core.ignorecase false
+
+  # npm 配置
+  sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
+  echo 'always-auth=true' >> ~/.npmrc
+  echo 'save-prefix=""' >> ~/.npmrc
+
+  echo "✅ Git 配置完成"
+  git config --global --list | grep -E 'user.name|user.email|core.autocrlf'
+else
+  echo -e "\n⚠️  已跳过 Git 配置"
 fi
-echo "✅ 已确认 Windows 主机 IP：$WINDOWS_IP"
 
-# 2. 交互式获取 Clash Socks5 端口（默认 7890，用户可修改）
-read -p "请输入 Windows Clash 的 Socks5 端口（默认 7890，直接回车使用默认值）：" CLASH_PORT
-CLASH_PORT=${CLASH_PORT:-7890}  # 若用户未输入，使用默认值 7890
-echo "✅ 已确认 Clash Socks5 端口：$CLASH_PORT"
+# 10. SSH 密钥配置（--skipSshKey 跳过）
+if [ "$SKIP_SSH_KEY" = false ]; then
+  echo -e "\n🔑 开始配置 SSH 密钥（用于 Git 仓库免密访问）..."
+  SSH_KEY_ED25519="$HOME/.ssh/id_ed25519.pub"
+  SSH_KEY_RSA="$HOME/.ssh/id_rsa.pub"
+  ACTIVE_SSH_KEY=""
 
-# 3. 定义代理地址（Socks5 协议 + HTTP 协议，适配所有工具）
-PROXY_SOCKS5="socks5://$WINDOWS_IP:$CLASH_PORT"
-PROXY_HTTP="http://$WINDOWS_IP:$CLASH_PORT"
+  # 检测已有密钥
+  if [ -f "$SSH_KEY_ED25519" ]; then
+    echo "✅ 已检测到 ed25519 类型 SSH 密钥"
+    ACTIVE_SSH_KEY="$SSH_KEY_ED25519"
+  elif [ -f "$SSH_KEY_RSA" ]; then
+    echo "✅ 已检测到 rsa 类型 SSH 密钥"
+    ACTIVE_SSH_KEY="$SSH_KEY_RSA"
+  else
+    # 生成新密钥
+    echo "⚠️  未检测到 SSH 密钥，正在生成 ed25519 类型密钥（更安全）..."
+    ssh-keygen -t ed25519 -C "$GIT_USER_EMAIL" -N "" -f "$HOME/.ssh/id_ed25519" &> /dev/null
+    echo "✅ SSH 密钥生成完成！"
+    ACTIVE_SSH_KEY="$SSH_KEY_ED25519"
+  fi
 
-# 4. 写入代理环境变量到 .bashrc（终端启动自动生效，修复变量引用问题）
-cat << EOF >> "$HOME/.bashrc"
+  # 输出公钥
+  echo -e "\n📋 你的 SSH 公钥（复制到 Codeup）："
+  echo "----------------------------------------------------------------------"
+  cat "$ACTIVE_SSH_KEY"
+  echo "----------------------------------------------------------------------"
+  echo "💡 提示：公钥已保存到 $ACTIVE_SSH_KEY，可随时通过 'cat $ACTIVE_SSH_KEY' 查看"
+else
+  echo -e "\n⚠️  已跳过 SSH 密钥配置"
+fi
+
+# 11. WSL 代理配置（--skipProxy 跳过）
+if [ "$SKIP_PROXY" = false ]; then
+  echo -e "\n🌐 开始 WSL 代理配置..."
+  # 获取 Windows IP（host.docker.internal）
+  WINDOWS_IP=$(ping -c 1 host.docker.internal | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+  if [ -z "$WINDOWS_IP" ] || ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+    read -p "请输入 Windows 局域网 IP（例如：192.168.1.100）：" WINDOWS_IP
+    while ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; do
+      echo "❌ IP 格式不合法（必须是 x.x.x.x 四段）！"
+      read -p "请重新输入 Windows 局域网 IP：" WINDOWS_IP
+    done
+  fi
+
+  # 获取 Clash 端口
+  read -p "请输入 Windows Clash 的 Socks5 端口（默认 7890，直接回车使用默认值）：" CLASH_PORT
+  CLASH_PORT=${CLASH_PORT:-7890}
+
+  # 定义代理地址
+  PROXY_SOCKS5="socks5://$WINDOWS_IP:$CLASH_PORT"
+  PROXY_HTTP="http://$WINDOWS_IP:$CLASH_PORT"
+
+  # 写入 .bashrc
+  cat << EOF >> "$HOME/.bashrc"
 
 # -------------------------- WSL 代理配置（Clash）--------------------------
-# 基础代理地址（通过 host.docker.internal 自动获取）
 PROXY_SOCKS5="$PROXY_SOCKS5"
 PROXY_HTTP="$PROXY_HTTP"
-
-# 全局环境变量（适配终端命令、工具链）
 export ALL_PROXY=\$PROXY_HTTP  # 优先用 HTTP 代理，兼容性更好
 export HTTP_PROXY=\$PROXY_HTTP
 export HTTPS_PROXY=\$PROXY_HTTP
@@ -310,7 +423,6 @@ export SOCKS_PROXY=\$PROXY_SOCKS5
 # 国内域名/IP 不走代理（优化访问速度，避免冲突）
 export NO_PROXY="localhost,127.0.0.1,172.0.0.0/8,192.168.0.0/16,.aliyun.com,.aliyuncs.com,.codeup.aliyun.com,.gupo.com.cn,packages.aliyun.com"
 
-# 代理控制命令（手动开关）
 proxy-on() {
   export ALL_PROXY=\$PROXY_HTTP
   export HTTP_PROXY=\$PROXY_HTTP
@@ -324,7 +436,6 @@ proxy-off() {
   echo "✅ 代理已关闭"
 }
 
-# 增强版代理测试（输出详细连接信息）
 proxy-test() {
   echo -e "\n正在测试代理连通性（访问 Google 验证）..."
   echo "  Windows IP：$WINDOWS_IP"
@@ -332,8 +443,7 @@ proxy-test() {
   echo "  超时时间：5 秒"
 
   # 输出关键连接日志，方便排查
-  curl -v --connect-timeout 5 https://www.google.com 2>&1 | grep -E 'Connected|Failed|timeout|refused|HTTP/'
-
+  curl -v --connect-timeout 5 https://www.google.com 2>&1 | grep -E 'Connected|Failed|timeout|refused'
   if curl -s --connect-timeout 5 https://www.google.com &> /dev/null; then
     echo "✅ 代理测试成功！可正常访问外网"
   else
@@ -347,62 +457,36 @@ proxy-test() {
 # --------------------------------------------------------------------------
 EOF
 
-# 5. 配置 Git 代理（单独配置，部分 Git 版本不读取环境变量）
-git config --global http.proxy "$PROXY_HTTP"
-git config --global https.proxy "$PROXY_HTTP"
-git config --global http.sslVerify false  # 避免代理导致的 SSL 证书校验失败
-echo "✅ Git 代理配置完成（使用 $PROXY_HTTP）"
+  echo "✅ 代理配置完成（$PROXY_SOCKS5）"
+  proxy-test
+else
+  echo -e "\n⚠️  已跳过 WSL 代理配置"
+fi
 
-# 6. 配置 npm/yarn/pnpm 代理（国内镜像已配置，此处可选，避免冲突）
-npm config set proxy "$PROXY_HTTP" || true
-npm config set https-proxy "$PROXY_HTTP" || true
-npm config set strict-ssl false || true
-yarn config set proxy "$PROXY_HTTP" || true
-yarn config set https-proxy "$PROXY_HTTP" || true
-pnpm config set proxy "$PROXY_HTTP" || true
-pnpm config set https-proxy "$PROXY_HTTP" || true
-echo "✅ npm/yarn/pnpm 代理配置完成"
-
-# 7. 代理生效与测试
-source "$HOME/.bashrc"  # 立即加载代理配置
-echo -e "\n🔍 正在测试代理连通性..."
-proxy-test
-
-# 12. 最终加载配置并验证所有工具
-echo -e "\n🔧 加载所有配置并验证安装结果..."
-
-# 验证关键工具是否可用
-verify_tool() {
-  local tool=$1
-  if command -v "$tool" &> /dev/null; then
-    local version=$("$tool" --version 2>&1 | head -n 1)
-    echo "  ✅ $tool：$version"
-  else
-    echo "  ❌ $tool：未安装成功"
-  fi
-}
-
-echo -e "\n📋 所有工具安装验证结果："
+# ======================== 收尾验证（汇总结果）========================
+echo -e "\n========================================================================"
+echo "📋 工具安装验证结果："
 verify_tool "git"
+verify_tool "node"
+verify_tool "npm"
 verify_tool "pnpm"
 verify_tool "yarn"
 verify_tool "yrm"
-verify_tool "tsc"  # typescript 命令
+verify_tool "tsc"
 verify_tool "git-open"
+verify_tool "fnm"
+verify_tool "gupo-deploy"
 
-# 13. 输出别名清单（新增核心需求）
-echo -e "\n📋 自定义命令别名清单（缩写 + 完整命令 + 功能说明）："
+echo -e "\n📋 自定义别名清单："
 for alias_key in "${!ALIAS_MAP[@]}"; do
   echo "  - $alias_key：${ALIAS_MAP[$alias_key]}"
 done
 
-# 补充端口转发函数 + 代理命令说明
-echo -e "\n⚙️ 常用函数/命令说明："
-echo "  - port-add [端口号]：创建 WSL 端口转发（示例：port-add 8080，让外部访问 WSL 的 8080 端口）"
-echo "  - port-del [端口号]：删除指定端口转发（示例：port-del 8080）"
-echo "  - proxy-on：开启代理（终端启动默认已开启）"
-echo "  - proxy-off：关闭代理（访问国内服务时可关闭）"
-echo "  - proxy-test：测试代理连通性（访问 Google 验证）"
+echo -e "\n⚙️ 常用命令说明："
+echo "  - 端口转发：port-add <端口> | port-del <端口> | port-reset"
+echo "  - 代理控制：proxy-on | proxy-off | proxy-test"
+echo "  - fnm 命令：fnm install <版本> | fnm use <版本>"
+echo "  - 镜像切换：yrm use <镜像名>"
 
 echo -e "\n🎉 所有操作完成！重启终端或执行 'source ~/.bashrc' 即可使用所有配置～"
 echo "📌 关键信息汇总："
@@ -412,3 +496,4 @@ echo "  - Git 用户名：$GIT_USER_NAME，邮箱：$GIT_USER_EMAIL"
 echo "  - SSH 公钥路径：$ACTIVE_SSH_KEY（已在上文输出，可复制到代码平台）"
 echo "  - WSL 代理配置：$PROXY_SOCKS5（Clash 需保持启动并开启局域网连接）"
 echo "  - 所有别名、函数、配置已生效，可直接使用"
+echo "========================================================================"
