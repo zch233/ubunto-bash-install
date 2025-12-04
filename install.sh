@@ -158,6 +158,12 @@ port-reset() {
   echo "🗑️ 正在重置端口转发"
   powershell.exe -Command 'Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command ""netsh interface portproxy reset"""'
 }
+
+# 端口查看函数
+port-show() {
+  echo "✅ 正在查看端口转发"
+  powershell.exe -Command 'Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command ""netsh interface portproxy show all"""'
+}
 EOF
 
   # 拼接原有 .bashrc 内容，替换原文件并修复权限
@@ -489,7 +495,7 @@ for alias_key in "${!ALIAS_MAP[@]}"; do
 done
 
 echo -e "\n⚙️ 常用命令说明："
-echo "  - 端口转发：port-add <端口> | port-del <端口> | port-reset"
+echo "  - 端口转发：port-add <端口> | port-del <端口> | port-reset | port-show"
 echo "  - 代理控制：proxy-on | proxy-off | proxy-test"
 echo "  - fnm 命令：fnm install <版本> | fnm use <版本>"
 echo "  - 镜像切换：yrm use <镜像名>"
