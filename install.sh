@@ -61,11 +61,29 @@ verify_tool() {
 # 提示用户确认（可选继续）
 confirm_continue() {
   local msg="$1"
-  read -p "$msg（y/N）：" choice
+  # 强制使用交互式终端读取输入
+  read -r -p "$msg（y/N）：" choice < /dev/tty
   case "$choice" in
     [Yy]* ) return 0;;
     * ) echo "❌ 用户取消，退出脚本"; exit 1;;
   esac
+}
+
+# 安全执行登录命令
+safe_login() {
+  local tool=$1
+  local registry=$2
+  local login_cmd=""
+
+  case "$tool" in
+    npm) login_cmd="npm login --registry=$registry";;
+    yarn) login_cmd="yarn login --registry=$registry";;
+    *) echo "❌ 不支持的工具：$tool"; return 1;;
+  esac
+
+  # 解决输入阻塞：指定终端类型 + 直接执行（不使用管道）
+  TERM=xterm-256color $login_cmd < /dev/tty
+  return $?
 }
 # ================================================================================
 
@@ -284,10 +302,14 @@ fi
 # 6. npm 登录（--skipNpmLogin 跳过）
 if [ "$SKIP_NPM_LOGIN" = false ] && command_exists "npm"; then
   echo -e "\n🔐 开始 npm 登录（Codeup 账号）..."
-  if npm login --registry="$CODEUP_REGISTRY"; then
+  # 使用安全登录函数（解决输入阻塞）
+  safe_login "npm" "$CODEUP_REGISTRY"
+  login_exit_code=$?
+
+  if [ $login_exit_code -eq 0 ]; then
     echo "✅ npm 登录成功"
   else
-    echo "❌ npm 登录失败！是否跳过？"
+    echo "❌ npm 登录失败（错误码：$login_exit_code）"
     confirm_continue "继续执行其他步骤"
   fi
 elif [ "$SKIP_NPM_LOGIN" = true ]; then
@@ -299,11 +321,15 @@ fi
 # 7. yarn 登录（--skipYarnLogin 跳过）
 if [ "$SKIP_YARN_LOGIN" = false ] && command_exists "yarn"; then
   echo -e "\n🔐 开始 yarn 登录（与 npm 账号一致）..."
-  if yarn login --registry="$CODEUP_REGISTRY"; then
+  # 使用安全登录函数（解决输入阻塞）
+  safe_login "yarn" "$CODEUP_REGISTRY"
+  login_exit_code=$?
+
+  if [ $login_exit_code -eq 0 ]; then
     echo "✅ yarn 登录成功"
   else
-    echo "❌ yarn 登录失败！是否跳过？"
-    confirm_continue "继续执行其他步骤"
+    echo -e "\n❌ yarn 登录失败（错误码：$login_exit_code）"
+    confirm_continue "是否跳过 yarn 登录继续执行其他步骤？"
   fi
 elif [ "$SKIP_YARN_LOGIN" = true ]; then
   echo -e "\n⚠️  已跳过 yarn 登录"
@@ -339,16 +365,16 @@ if [ "$SKIP_GIT_CONFIG" = false ]; then
   fi
 
   # 配置用户信息
-  read -p "请输入 Git 用户名（中文名字）：" GIT_USER_NAME
+  read -r -p "请输入 Git 用户名（中文名字）：" GIT_USER_NAME < /dev/tty
   while [ -z "$GIT_USER_NAME" ]; do
     echo "❌ 用户名不能为空！"
-    read -p "重新输入：" GIT_USER_NAME
+    read -r -p "重新输入：" GIT_USER_NAME < /dev/tty
   done
 
-  read -p "请输入 Git 邮箱（与云效一致或者你常用的）：" GIT_USER_EMAIL
+  read -r -p "请输入 Git 邮箱（与云效一致或者你常用的）：" GIT_USER_EMAIL < /dev/tty
   while [ -z "$GIT_USER_EMAIL" ] || ! echo "$GIT_USER_EMAIL" | grep -E '@'; do
     echo "❌ 邮箱格式不合法！"
-    read -p "重新输入：" GIT_USER_EMAIL
+    read -r -p "重新输入：" GIT_USER_EMAIL < /dev/tty
   done
 
   # 应用 Git 配置
@@ -407,15 +433,15 @@ if [ "$SKIP_PROXY" = false ]; then
   # 获取 Windows IP（host.docker.internal）
   WINDOWS_IP=$(ping -c 1 host.docker.internal | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
   if [ -z "$WINDOWS_IP" ] || ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
-    read -p "请输入 Windows 局域网 IP（例如：192.168.1.100）：" WINDOWS_IP
+    read -r -p "请输入 Windows 局域网 IP（例如：192.168.1.100）：" WINDOWS_IP < /dev/tty
     while ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; do
       echo "❌ IP 格式不合法（必须是 x.x.x.x 四段）！"
-      read -p "请重新输入 Windows 局域网 IP：" WINDOWS_IP
+      read -r -p "请重新输入 Windows 局域网 IP：" WINDOWS_IP < /dev/tty
     done
   fi
 
   # 获取 Clash 端口
-  read -p "请输入 Windows Clash 的 Socks5 端口（默认 7890，直接回车使用默认值）：" CLASH_PORT
+  read -r -p "请输入 Windows Clash 的 Socks5 端口（默认 7890，直接回车使用默认值）：" CLASH_PORT < /dev/tty
   CLASH_PORT=${CLASH_PORT:-7890}
 
   # 定义代理地址
@@ -503,10 +529,10 @@ echo "  - 镜像切换：yrm use <镜像名>"
 
 echo -e "\n🎉 所有操作完成！重启终端或执行 'source ~/.bashrc' 即可使用所有配置～"
 echo "📌 关键信息汇总："
-echo "  - 镜像源：$(yrm current)（$CODEUP_REGISTRY）"
-echo "  - npm/yarn 已登录 Codeup 镜像"
+echo "  - 镜像源：$(yrm current 2>/dev/null || echo "未配置")（$CODEUP_REGISTRY）"
+echo "  - npm/yarn 登录状态：$(if npm whoami --registry="$CODEUP_REGISTRY" 2>/dev/null; then echo "已登录"; else echo "未登录"; fi)"
 echo "  - Git 用户名：$GIT_USER_NAME，邮箱：$GIT_USER_EMAIL"
-echo "  - SSH 公钥路径：$ACTIVE_SSH_KEY（已在上文输出，可复制到代码平台）"
-echo "  - WSL 代理配置：$PROXY_SOCKS5（Clash 需保持启动并开启局域网连接）"
+echo "  - SSH 公钥路径：${ACTIVE_SSH_KEY:-未配置}（已在上文输出，可复制到代码平台）"
+echo "  - WSL 代理配置：${PROXY_SOCKS5:-未配置}（Clash 需保持启动并开启局域网连接）"
 echo "  - 所有别名、函数、配置已生效，可直接使用"
 echo "========================================================================"
