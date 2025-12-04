@@ -127,6 +127,10 @@ echo "========================================================================"
 # 0. WSL 代理配置（--skipProxy 跳过）
 if [ "$SKIP_PROXY" = false ]; then
   echo -e "\n🌐 开始 WSL 代理配置..."
+  # 备份原有 .bashrc
+  BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$HOME/.bashrc" "$BACKUP_FILE"
+  echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
   # 获取 Windows IP（host.docker.internal）
   WINDOWS_IP=$(ping -c 1 host.docker.internal | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
   if [ -z "$WINDOWS_IP" ] || ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -219,7 +223,7 @@ if [ "$SKIP_ALIAS" = false ]; then
   echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
 
   # 写入自定义配置
-  cat << EOF > "$HOME/.bashrc.tmp"
+  cat << EOF > "$HOME/.bashrc"
 echo "welcome $USER"
 
 alias gp="git push"
@@ -272,10 +276,6 @@ port-show() {
 }
 EOF
 
-  # 拼接原有 .bashrc 内容，替换原文件并修复权限
-  cat "$HOME/.bashrc" >> "$HOME/.bashrc.tmp"
-  mv -f "$HOME/.bashrc.tmp" "$HOME/.bashrc"
-  chmod 644 "$HOME/.bashrc"
   echo "✅ 已更新 .bashrc 配置（自定义配置在最前面）"
 else
   echo -e "\n⚠️  已跳过 .bashrc 别名配置"
