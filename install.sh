@@ -152,6 +152,12 @@ port-del() {
   echo "🗑️ 正在删除端口转发：\$PORT"
   powershell.exe -Command 'Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command ""netsh interface portproxy delete v4tov4 listenport='\$PORT' listenaddress=0.0.0.0; echo === 转发已删除 ===; netsh interface portproxy show v4tov4"""'
 }
+
+# 端口重置函数
+port-reset() {
+  echo "🗑️ 正在重置端口转发"
+  powershell.exe -Command 'Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command ""netsh interface portproxy reset"""'
+}
 EOF
 
   # 拼接原有 .bashrc 内容，替换原文件并修复权限
