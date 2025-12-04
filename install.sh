@@ -123,6 +123,82 @@ echo "📋 脚本执行配置："
 echo "========================================================================"
 
 # ======================== 核心步骤（带跳过逻辑）========================
+
+# 0. WSL 代理配置（--skipProxy 跳过）
+if [ "$SKIP_PROXY" = false ]; then
+  echo -e "\n🌐 开始 WSL 代理配置..."
+  # 获取 Windows IP（host.docker.internal）
+  WINDOWS_IP=$(ping -c 1 host.docker.internal | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+  if [ -z "$WINDOWS_IP" ] || ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+    read -r -p "请输入 Windows 局域网 IP（例如：192.168.1.100）：" WINDOWS_IP < /dev/tty
+    while ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; do
+      echo "❌ IP 格式不合法（必须是 x.x.x.x 四段）！"
+      read -r -p "请重新输入 Windows 局域网 IP：" WINDOWS_IP < /dev/tty
+    done
+  fi
+
+  # 获取 Clash 端口
+  read -r -p "请输入 Windows Clash or Proxy 的 Socks5/Http 端口（默认 7890，直接回车使用默认值）：" CLASH_PORT < /dev/tty
+  CLASH_PORT=${CLASH_PORT:-7890}
+
+  # 定义代理地址
+  PROXY_SOCKS5="socks5://$WINDOWS_IP:$CLASH_PORT"
+  PROXY_HTTP="http://$WINDOWS_IP:$CLASH_PORT"
+
+  # 写入 .bashrc
+  cat << EOF >> "$HOME/.bashrc"
+
+# -------------------------- WSL 代理配置（Clash）--------------------------
+PROXY_SOCKS5="$PROXY_SOCKS5"
+PROXY_HTTP="$PROXY_HTTP"
+export ALL_PROXY=\$PROXY_HTTP  # 优先用 HTTP 代理，兼容性更好
+export HTTP_PROXY=\$PROXY_HTTP
+export HTTPS_PROXY=\$PROXY_HTTP
+export SOCKS_PROXY=\$PROXY_SOCKS5
+
+# 国内域名/IP 不走代理（优化访问速度，避免冲突）
+export NO_PROXY="localhost,127.0.0.1,172.0.0.0/8,192.168.0.0/16,.aliyun.com,.aliyuncs.com,.codeup.aliyun.com,.gupo.com.cn,packages.aliyun.com"
+
+proxy-on() {
+  export ALL_PROXY=\$PROXY_HTTP
+  export HTTP_PROXY=\$PROXY_HTTP
+  export HTTPS_PROXY=\$PROXY_HTTP
+  export SOCKS_PROXY=\$PROXY_SOCKS5
+  echo "✅ 代理已开启（\$PROXY_SOCKS5）"
+}
+
+proxy-off() {
+  unset ALL_PROXY HTTP_PROXY HTTPS_PROXY SOCKS_PROXY
+  echo "✅ 代理已关闭"
+}
+
+proxy-test() {
+  echo -e "\n正在测试代理连通性（访问 Google 验证）..."
+  echo "  Windows IP：$WINDOWS_IP"
+  echo "  代理地址：\$PROXY_SOCKS5"
+  echo "  超时时间：5 秒"
+
+  # 输出关键连接日志，方便排查
+  curl -v --connect-timeout 5 https://www.google.com 2>&1 | grep -E 'Connected|Failed|timeout|refused'
+  if curl -s --connect-timeout 5 https://www.google.com &> /dev/null; then
+    echo "✅ 代理测试成功！可正常访问外网"
+  else
+    echo "❌ 代理测试失败！请检查："
+    echo "  1. Windows Clash 是否已启动并开启「允许局域网连接」"
+    echo "  2. Clash 端口（$CLASH_PORT）是否与配置一致"
+    echo "  3. Windows 防火墙是否放行 $CLASH_PORT 端口"
+    echo "  4. Clash 节点是否可用（浏览器访问 Google 验证）"
+  fi
+}
+# --------------------------------------------------------------------------
+EOF
+
+  echo "✅ 代理配置完成（$PROXY_SOCKS5）"
+  proxy-test
+else
+  echo -e "\n⚠️  已跳过 WSL 代理配置"
+fi
+
 # 1. .bashrc 别名配置（--skipAlias 跳过）
 if [ "$SKIP_ALIAS" = false ]; then
   echo -e "\n🔧 开始 .bashrc 配置..."
@@ -425,81 +501,6 @@ if [ "$SKIP_SSH_KEY" = false ]; then
   echo "💡 提示：公钥已保存到 $ACTIVE_SSH_KEY，可随时通过 'cat $ACTIVE_SSH_KEY' 查看"
 else
   echo -e "\n⚠️  已跳过 SSH 密钥配置"
-fi
-
-# 11. WSL 代理配置（--skipProxy 跳过）
-if [ "$SKIP_PROXY" = false ]; then
-  echo -e "\n🌐 开始 WSL 代理配置..."
-  # 获取 Windows IP（host.docker.internal）
-  WINDOWS_IP=$(ping -c 1 host.docker.internal | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
-  if [ -z "$WINDOWS_IP" ] || ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
-    read -r -p "请输入 Windows 局域网 IP（例如：192.168.1.100）：" WINDOWS_IP < /dev/tty
-    while ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; do
-      echo "❌ IP 格式不合法（必须是 x.x.x.x 四段）！"
-      read -r -p "请重新输入 Windows 局域网 IP：" WINDOWS_IP < /dev/tty
-    done
-  fi
-
-  # 获取 Clash 端口
-  read -r -p "请输入 Windows Clash 的 Socks5 端口（默认 7890，直接回车使用默认值）：" CLASH_PORT < /dev/tty
-  CLASH_PORT=${CLASH_PORT:-7890}
-
-  # 定义代理地址
-  PROXY_SOCKS5="socks5://$WINDOWS_IP:$CLASH_PORT"
-  PROXY_HTTP="http://$WINDOWS_IP:$CLASH_PORT"
-
-  # 写入 .bashrc
-  cat << EOF >> "$HOME/.bashrc"
-
-# -------------------------- WSL 代理配置（Clash）--------------------------
-PROXY_SOCKS5="$PROXY_SOCKS5"
-PROXY_HTTP="$PROXY_HTTP"
-export ALL_PROXY=\$PROXY_HTTP  # 优先用 HTTP 代理，兼容性更好
-export HTTP_PROXY=\$PROXY_HTTP
-export HTTPS_PROXY=\$PROXY_HTTP
-export SOCKS_PROXY=\$PROXY_SOCKS5
-
-# 国内域名/IP 不走代理（优化访问速度，避免冲突）
-export NO_PROXY="localhost,127.0.0.1,172.0.0.0/8,192.168.0.0/16,.aliyun.com,.aliyuncs.com,.codeup.aliyun.com,.gupo.com.cn,packages.aliyun.com"
-
-proxy-on() {
-  export ALL_PROXY=\$PROXY_HTTP
-  export HTTP_PROXY=\$PROXY_HTTP
-  export HTTPS_PROXY=\$PROXY_HTTP
-  export SOCKS_PROXY=\$PROXY_SOCKS5
-  echo "✅ 代理已开启（\$PROXY_SOCKS5）"
-}
-
-proxy-off() {
-  unset ALL_PROXY HTTP_PROXY HTTPS_PROXY SOCKS_PROXY
-  echo "✅ 代理已关闭"
-}
-
-proxy-test() {
-  echo -e "\n正在测试代理连通性（访问 Google 验证）..."
-  echo "  Windows IP：$WINDOWS_IP"
-  echo "  代理地址：\$PROXY_SOCKS5"
-  echo "  超时时间：5 秒"
-
-  # 输出关键连接日志，方便排查
-  curl -v --connect-timeout 5 https://www.google.com 2>&1 | grep -E 'Connected|Failed|timeout|refused'
-  if curl -s --connect-timeout 5 https://www.google.com &> /dev/null; then
-    echo "✅ 代理测试成功！可正常访问外网"
-  else
-    echo "❌ 代理测试失败！请检查："
-    echo "  1. Windows Clash 是否已启动并开启「允许局域网连接」"
-    echo "  2. Clash 端口（$CLASH_PORT）是否与配置一致"
-    echo "  3. Windows 防火墙是否放行 $CLASH_PORT 端口"
-    echo "  4. Clash 节点是否可用（浏览器访问 Google 验证）"
-  fi
-}
-# --------------------------------------------------------------------------
-EOF
-
-  echo "✅ 代理配置完成（$PROXY_SOCKS5）"
-  proxy-test
-else
-  echo -e "\n⚠️  已跳过 WSL 代理配置"
 fi
 
 # ======================== 收尾验证（汇总结果）========================
