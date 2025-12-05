@@ -9,8 +9,9 @@ CODEUP_REGISTRY="https://packages.aliyun.com/5eb3e37038076f00011bcd4a/npm/npm-re
 # fnm 安装地址（优先 jsdelivr 镜像，失败回退官方）
 FNM_INSTALL_URL_MIRROR="https://cdn.jsdelivr.net/gh/Schniz/fnm@master/.ci/install.sh"
 FNM_INSTALL_URL_OFFICIAL="https://fnm.vercel.app/install"
-# Node.js LTS 源地址
+# Node.js 源地址（自动适配 libc 版本）
 NODE_LTS_SETUP_URL="https://deb.nodesource.com/setup_lts.x"
+NODE_LTS_SETUP_URL_OLD="https://deb.nodesource.com/setup_14.x"
 
 # 跳过参数默认值（false=不跳过）
 SKIP_FLAG=false
@@ -85,6 +86,19 @@ safe_login() {
   TERM=xterm-256color $login_cmd < /dev/tty
   return $?
 }
+
+# 检测 libc6 版本，返回适配的 Node.js 源地址
+get_node_setup_url() {
+  # 提取 libc6 主版本号（如 2.27 → 2.27，2.31 → 2.31）
+  local libc_version=$(ldd --version | grep -oP 'GLIBC \K[0-9]+\.[0-9]+' | head -n 1)
+  # 对比版本（需要 bc 工具支持浮点比较）
+  if command_exists "bc" && (( $(echo "$libc_version < 2.28" | bc -l) )); then
+    echo "⚠️ 检测到系统 libc6 版本为 $libc_version（<2.28），将使用 Node.js 14.x 兼容版本"
+    echo "$NODE_LTS_SETUP_URL_OLD"
+  else
+    echo "$NODE_LTS_SETUP_URL"
+  fi
+}
 # ================================================================================
 
 # ======================== 参数解析（处理跳过选项）========================
@@ -127,10 +141,6 @@ echo "========================================================================"
 # 0. WSL 代理配置（--skipProxy 跳过）
 if [ "$SKIP_PROXY" = false ]; then
   echo -e "\n🌐 开始 WSL 代理配置..."
-  # 备份原有 .bashrc
-  BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
-  cp "$HOME/.bashrc" "$BACKUP_FILE"
-  echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
   # 获取 Windows IP（host.docker.internal）
   WINDOWS_IP=$(ping -c 1 host.docker.internal | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
   if [ -z "$WINDOWS_IP" ] || ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -149,8 +159,12 @@ if [ "$SKIP_PROXY" = false ]; then
   PROXY_SOCKS5="socks5://$WINDOWS_IP:$CLASH_PORT"
   PROXY_HTTP="http://$WINDOWS_IP:$CLASH_PORT"
 
-  # 写入 .bashrc
-  cat << EOF >> "$HOME/.bashrc"
+  # 先备份 .bashrc（避免重复备份）
+  if ! grep -q "# -------------------------- WSL 代理配置（Clash）--------------------------" "$HOME/.bashrc"; then
+    BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
+    cp "$HOME/.bashrc" "$BACKUP_FILE"
+    echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
+    cat << EOF >> "$HOME/.bashrc"
 
 # -------------------------- WSL 代理配置（Clash）--------------------------
 PROXY_SOCKS5="$PROXY_SOCKS5"
@@ -205,25 +219,29 @@ proxy-test() {
 }
 # --------------------------------------------------------------------------
 EOF
+  else
+    echo "✅ WSL 代理配置（Clash）已存在，无需重复配置"
+  fi
 
   echo "✅ 代理配置完成（$PROXY_SOCKS5）"
   # 加载刚写入的 .bashrc 配置，让 proxy-test/proxy-on/proxy-off 函数生效
-  source "$HOME/.bashrc"
-  proxy-test
+  bash -i -c "source \"$HOME/.bashrc\" >/dev/null 2>&1; echo '✅ 已加载 .bashrc'; proxy-test"
 else
   echo -e "\n⚠️  已跳过 WSL 代理配置"
 fi
 
 # 1. .bashrc 别名配置（--skipAlias 跳过）
 if [ "$SKIP_ALIAS" = false ]; then
-  echo -e "\n🔧 开始 .bashrc 配置..."
-  # 备份原有 .bashrc
-  BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
-  cp "$HOME/.bashrc" "$BACKUP_FILE"
-  echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
+  echo -e "\n🔧 开始 .bashrc 别名配置..."
+  # 备份原有 .bashrc（仅首次配置时备份）
+  if ! grep -q "# -------------------------- 自定义别名配置 --------------------------" "$HOME/.bashrc"; then
+    BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
+    cp "$HOME/.bashrc" "$BACKUP_FILE"
+    echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
+    # 自定义别名配置
+    cat << EOF - > "$HOME/.bashrc"
 
-  # 写入自定义配置
-  cat << EOF > "$HOME/.bashrc"
+# -------------------------- 自定义别名配置 --------------------------
 echo "welcome $USER"
 
 alias gp="git push"
@@ -274,9 +292,12 @@ port-show() {
   echo "✅ 正在查看端口转发"
   powershell.exe -Command 'Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command ""netsh interface portproxy show all; Read-Host '查看完成，按Enter关闭窗口'"""'
 }
+# ------------------------ 自定义别名配置结束 ------------------------
 EOF
-
-  echo "✅ 已更新 .bashrc 配置（自定义配置在最前面）"
+    echo "✅ 已更新 .bashrc 别名配置"
+  else
+    echo "✅ .bashrc 别名配置已存在，无需重复配置"
+  fi
 else
   echo -e "\n⚠️  已跳过 .bashrc 别名配置"
 fi
@@ -302,19 +323,38 @@ if [ "$SKIP_FNM" = false ]; then
   fi
   echo "✅ fnm 依赖（unzip + curl）已就绪"
 
-  # 安装 fnm（镜像优先）
-  if curl -fsSL "$FNM_INSTALL_URL_MIRROR" | bash; then
-    echo "✅ fnm 镜像地址安装成功"
-  elif curl -fsSL "$FNM_INSTALL_URL_OFFICIAL" | bash; then
-    echo "✅ fnm 官方地址安装成功"
+  # 检测 fnm 是否已安装
+  if command_exists "fnm"; then
+    echo "✅ fnm 已安装（版本：$(fnm --version)），无需重复安装"
   else
-    echo "❌ fnm 安装失败！是否跳过？"
-    confirm_continue "继续执行其他步骤"
-  fi
+    # 预处理 fnm 安装目录权限（解决 Permission denied 问题）
+    FNM_INSTALL_DIR="/home/$USER/.local/share/fnm"
+    mkdir -p "$FNM_INSTALL_DIR"
+    chown -R "$USER:$USER" "$FNM_INSTALL_DIR"
+    chmod -R 755 "$FNM_INSTALL_DIR"
+    echo "✅ 已修复 fnm 安装目录权限：$FNM_INSTALL_DIR"
+    # 安装 fnm（镜像优先）
+    if curl -fsSL "$FNM_INSTALL_URL_MIRROR" | bash; then
+      echo "✅ fnm 镜像地址安装成功"
+    elif curl -fsSL "$FNM_INSTALL_URL_OFFICIAL" | bash; then
+      echo "✅ fnm 官方地址安装成功"
+    else
+      echo "❌ fnm 安装失败！是否跳过？"
+      confirm_continue "继续执行其他步骤"
+    fi
 
-  # 配置环境变量
-  if ! grep -q 'eval "$(fnm env --use-on-cd --shell bash)"' "$HOME/.bashrc"; then
-    echo 'eval "$(fnm env --use-on-cd --shell bash)"' >> "$HOME/.bashrc"
+    # 配置环境变量（避免重复配置）
+    if ! grep -q '# -------------------------- fnm 自动适配 --------------------------' "$HOME/.bashrc"; then
+      cat << EOF >> "$HOME/.bashrc"
+
+# -------------------------- fnm 自动适配 --------------------------
+eval "\$(fnm env --use-on-cd --shell bash)"
+# ------------------------ fnm 自动适配配置结束 ------------------------
+EOF
+      echo "✅ fnm 环境变量已配置"
+    else
+      echo "✅ fnm 环境变量已存在，无需重复配置"
+    fi
   fi
   echo "✅ fnm 配置完成"
 else
@@ -333,23 +373,31 @@ fi
 
 # 3. Node.js 安装（--skipNode 跳过）
 if [ "$SKIP_NODE" = false ]; then
-  echo -e "\n🔧 开始 Node.js LTS 安装..."
-  # 卸载旧版
-  if command_exists "node"; then
-    echo "⚠️  检测到已安装 Node，正在卸载旧版..."
-    sudo apt-get remove -y nodejs npm &> /dev/null
-  fi
+  echo -e "\n🔧 开始 Node.js 安装..."
 
-  # 安装新版
-  if curl -fsSL "$NODE_LTS_SETUP_URL" | sudo -E bash - && sudo apt-get install -y nodejs; then
+  # 检测 Node.js 是否已安装
+  if command_exists "node"; then
     NODE_VERSION=$(node -v)
     NPM_VERSION=$(npm -v)
-    echo "✅ Node.js 安装成功："
+    echo "✅ Node.js 已安装（版本：$NODE_VERSION），无需重复安装"
     echo "  - Node：$NODE_VERSION"
     echo "  - npm：$NPM_VERSION"
   else
-    echo "❌ Node.js 安装失败！是否跳过？"
-    confirm_continue "继续执行其他步骤"
+    # 获取适配的 Node.js 源地址
+    NODE_SETUP_URL=$(get_node_setup_url)
+    echo "✅ 将使用 Node.js 源地址：$NODE_SETUP_URL"
+
+    # 安装新版 Node.js
+    if curl -fsSL "$NODE_SETUP_URL" | sudo -E bash - && sudo apt-get install -y nodejs; then
+      NODE_VERSION=$(node -v)
+      NPM_VERSION=$(npm -v)
+      echo "✅ Node.js 安装成功："
+      echo "  - Node：$NODE_VERSION"
+      echo "  - npm：$NPM_VERSION"
+    else
+      echo "❌ Node.js 安装失败！是否跳过？"
+      confirm_continue "继续执行其他步骤"
+    fi
   fi
 else
   echo -e "\n⚠️  已跳过 Node.js 安装"
@@ -373,7 +421,15 @@ fi
 # 5. npm registry 镜像配置（--skipNpmRegistry 跳过）
 if [ "$SKIP_NPM_REGISTRY" = false ] && command_exists "yrm"; then
   echo -e "\n🔧 开始 npm registry 镜像配置..."
-  yrm add codeup "$CODEUP_REGISTRY" --yes || echo "⚠️ Codeup 镜像已存在"
+  # 检测 codeup 镜像是否已存在
+  if ! yrm ls | grep -q "codeup"; then
+    yrm add codeup "$CODEUP_REGISTRY" --yes
+    echo "✅ 已添加 Codeup 镜像源"
+  else
+    echo "✅ Codeup 镜像源已存在，无需重复添加"
+  fi
+
+  # 切换到 codeup 镜像
   if yrm use codeup; then
     echo "✅ yrm 切换到 Codeup 镜像：$(yrm current)"
   else
@@ -389,15 +445,29 @@ fi
 # 6. npm 登录（--skipNpmLogin 跳过）
 if [ "$SKIP_NPM_LOGIN" = false ] && command_exists "npm"; then
   echo -e "\n🔐 开始 npm 登录（Codeup 账号）..."
-  # 使用安全登录函数（解决输入阻塞）
-  safe_login "npm" "$CODEUP_REGISTRY"
-  login_exit_code=$?
 
-  if [ $login_exit_code -eq 0 ]; then
-    echo "✅ npm 登录成功"
+  # 检测文件是否存在
+  if [ -f "$HOME/.npmrc" ]; then
+    # 检测是否已登录
+    grep -qE "$(echo "$CODEUP_REGISTRY" | sed -e 's/^.*\/\///' | sed -e 's/\//\\\//g'):_authToken=.+" "$HOME/.npmrc"
   else
-    echo "❌ npm 登录失败（错误码：$login_exit_code）"
-    confirm_continue "继续执行其他步骤"
+    # 文件不存在时，强制返回未匹配（退出码 1）
+    false
+  fi
+
+  if [ $? -eq 0 ]; then
+    echo "✅ npm 已配置 Codeup 镜像认证（无需重复登录）"
+  else
+    # 使用安全登录函数（解决输入阻塞）
+    safe_login "npm" "$CODEUP_REGISTRY"
+    login_exit_code=$?
+
+    if [ $login_exit_code -eq 0 ]; then
+      echo "✅ npm 登录成功"
+    else
+      echo "❌ npm 登录失败（错误码：$login_exit_code）"
+      confirm_continue "继续执行其他步骤"
+    fi
   fi
 elif [ "$SKIP_NPM_LOGIN" = true ]; then
   echo -e "\n⚠️  已跳过 npm 登录"
@@ -408,15 +478,27 @@ fi
 # 7. yarn 登录（--skipYarnLogin 跳过）
 if [ "$SKIP_YARN_LOGIN" = false ] && command_exists "yarn"; then
   echo -e "\n🔐 开始 yarn 登录（与 npm 账号一致）..."
-  # 使用安全登录函数（解决输入阻塞）
-  safe_login "yarn" "$CODEUP_REGISTRY"
-  login_exit_code=$?
-
-  if [ $login_exit_code -eq 0 ]; then
-    echo "✅ yarn 登录成功"
+  if [ -f "$HOME/.yarnrc" ]; then
+    # 检测是否已登录
+   grep -qE "$(echo "$CODEUP_REGISTRY" | sed -e 's/^.*\/\///' | sed -e 's/\//\\\//g'):_authToken\" \".+\"" "$HOME/.yarnrc"
   else
-    echo -e "\n❌ yarn 登录失败（错误码：$login_exit_code）"
-    confirm_continue "是否跳过 yarn 登录继续执行其他步骤？"
+    # 文件不存在时，强制返回未匹配（退出码 1）
+    false
+  fi
+
+  if [ $? -eq 0 ]; then
+    echo "✅ yarn 已配置 Codeup 镜像认证（无需重复登录）"
+  else
+    # 使用安全登录函数（解决输入阻塞）
+    safe_login "yarn" "$CODEUP_REGISTRY"
+    login_exit_code=$?
+
+    if [ $login_exit_code -eq 0 ]; then
+      echo "✅ yarn 登录成功"
+    else
+      echo -e "\n❌ yarn 登录失败（错误码：$login_exit_code）"
+      confirm_continue "是否跳过 yarn 登录继续执行其他步骤？"
+    fi
   fi
 elif [ "$SKIP_YARN_LOGIN" = true ]; then
   echo -e "\n⚠️  已跳过 yarn 登录"
@@ -449,35 +531,44 @@ if [ "$SKIP_GIT_CONFIG" = false ]; then
       echo "❌ Git 安装失败！"
       exit 1
     }
+  else
+    echo "✅ Git 已安装（版本：$(git --version | cut -d ' ' -f 3)）"
   fi
 
-  # 配置用户信息
-  read -r -p "请输入 Git 用户名（中文名字）：" GIT_USER_NAME < /dev/tty
-  while [ -z "$GIT_USER_NAME" ]; do
-    echo "❌ 用户名不能为空！"
-    read -r -p "重新输入：" GIT_USER_NAME < /dev/tty
-  done
+  # 检测 Git 用户信息是否已配置
+  if git config --global --get user.name &> /dev/null && git config --global --get user.email &> /dev/null; then
+    echo "✅ Git 用户信息已配置："
+    echo "  - 用户名：$(git config --global --get user.name)"
+    echo "  - 邮箱：$(git config --global --get user.email)"
+  else
+    # 配置用户信息
+    read -r -p "请输入 Git 用户名（中文名字）：" GIT_USER_NAME < /dev/tty
+    while [ -z "$GIT_USER_NAME" ]; do
+      echo "❌ 用户名不能为空！"
+      read -r -p "重新输入：" GIT_USER_NAME < /dev/tty
+    done
 
-  read -r -p "请输入 Git 邮箱（与云效一致或者你常用的）：" GIT_USER_EMAIL < /dev/tty
-  while [ -z "$GIT_USER_EMAIL" ] || ! echo "$GIT_USER_EMAIL" | grep -E '@'; do
-    echo "❌ 邮箱格式不合法！"
-    read -r -p "重新输入：" GIT_USER_EMAIL < /dev/tty
-  done
+    read -r -p "请输入 Git 邮箱（与云效一致或者你常用的）：" GIT_USER_EMAIL < /dev/tty
+    while [ -z "$GIT_USER_EMAIL" ] || ! echo "$GIT_USER_EMAIL" | grep -E '@'; do
+      echo "❌ 邮箱格式不合法！"
+      read -r -p "重新输入：" GIT_USER_EMAIL < /dev/tty
+    done
 
-  # 应用 Git 配置
-  git config --global core.autocrlf input
-  git config --global user.name "$GIT_USER_NAME"
-  git config --global user.email "$GIT_USER_EMAIL"
-  git config --global core.quotepath false
-  git config --global core.ignorecase false
+    # 应用 Git 配置
+    git config --global core.autocrlf input
+    git config --global user.name "$GIT_USER_NAME"
+    git config --global user.email "$GIT_USER_EMAIL"
+    git config --global core.quotepath false
+    git config --global core.ignorecase false
 
-  # npm 配置
-  sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
-  echo 'always-auth=true' >> ~/.npmrc
-  echo 'save-prefix=""' >> ~/.npmrc
+    # npm 配置
+    sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
+    echo 'always-auth=true' >> ~/.npmrc
+    echo 'save-prefix=""' >> ~/.npmrc
 
-  echo "✅ Git 配置完成"
-  git config --global --list | grep -E 'user.name|user.email|core.autocrlf'
+    echo "✅ Git 配置完成"
+    git config --global --list | grep -E 'user.name|user.email|core.autocrlf'
+  fi
 else
   echo -e "\n⚠️  已跳过 Git 配置"
 fi
@@ -543,7 +634,7 @@ echo -e "\n🎉 所有操作完成！重启终端或执行 'source ~/.bashrc' �
 echo "📌 关键信息汇总："
 echo "  - 镜像源：$(yrm current 2>/dev/null || echo "未配置")（$CODEUP_REGISTRY）"
 echo "  - npm/yarn 登录状态：$(if npm whoami --registry="$CODEUP_REGISTRY" 2>/dev/null; then echo "已登录"; else echo "未登录"; fi)"
-echo "  - Git 用户名：$GIT_USER_NAME，邮箱：$GIT_USER_EMAIL"
+echo "  - Git 用户名：$(git config --global --get user.name 2>/dev/null || echo "未配置")，邮箱：$(git config --global --get user.email 2>/dev/null || echo "未配置")"
 echo "  - SSH 公钥路径：${ACTIVE_SSH_KEY:-未配置}（已在上文输出，可复制到代码平台）"
 echo "  - WSL 代理配置：${PROXY_SOCKS5:-未配置}（Clash 需保持启动并开启局域网连接）"
 echo "  - 所有别名、函数、配置已生效，可直接使用"
