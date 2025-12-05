@@ -191,7 +191,6 @@ proxy-off() {
 }
 
 proxy-test() {
-  # 关键修改：函数内先检测代理是否开启，未开启则自动开启
   if [ -z "\$ALL_PROXY" ]; then
     echo -e "\n🔌 检测到代理未开启，正在自动开启..."
     proxy-on
