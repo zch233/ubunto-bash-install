@@ -225,6 +225,7 @@ EOF
   echo "✅ 代理配置完成（$PROXY_SOCKS5）"
   # 加载刚写入的 .bashrc 配置，让 proxy-test/proxy-on/proxy-off 函数生效
   bash -i -c "source \"$HOME/.bashrc\" >/dev/null 2>&1; echo '✅ 已加载 .bashrc'; proxy-test"
+  source "$HOME/.bashrc"
 else
   echo -e "\n⚠️  已跳过 WSL 代理配置"
 fi
@@ -422,7 +423,7 @@ if [ "$SKIP_NPM_REGISTRY" = false ] && command_exists "yrm"; then
   echo -e "\n🔧 开始 npm registry 镜像配置..."
   # 检测 codeup 镜像是否已存在
   if ! yrm ls | grep -q "codeup"; then
-    yrm add codeup "$CODEUP_REGISTRY" --yes
+    yrm add codeup "$CODEUP_REGISTRY"
     echo "✅ 已添加 Codeup 镜像源"
   else
     echo "✅ Codeup 镜像源已存在，无需重复添加"
@@ -451,7 +452,7 @@ if [ "$SKIP_NPM_LOGIN" = false ] && command_exists "npm"; then
     grep -qE "$(echo "$CODEUP_REGISTRY" | sed -e 's/^.*\/\///' | sed -e 's/\//\\\//g'):_authToken=.+" "$HOME/.npmrc"
   else
     # 文件不存在时，强制返回未匹配（退出码 1）
-    false
+    echo ".npmrc 文件不存在"
   fi
 
   if [ $? -eq 0 ]; then
