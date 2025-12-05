@@ -93,7 +93,7 @@ get_node_setup_url() {
   local libc_version=$(ldd --version | grep -oP 'GLIBC \K[0-9]+\.[0-9]+' | head -n 1)
   # 对比版本（需要 bc 工具支持浮点比较）
   if command_exists "bc" && (( $(echo "$libc_version < 2.28" | bc -l) )); then
-    echo "⚠️ 检测到系统 libc6 版本为 $libc_version（<2.28），将使用 Node.js 14.x 兼容版本"
+    echo "⚠️ 检测到系统 libc6 版本为 $libc_version（<2.28），将使用 Node.js 14.x 兼容版本" >&2
     echo "$NODE_LTS_SETUP_URL_OLD"
   else
     echo "$NODE_LTS_SETUP_URL"
@@ -304,29 +304,28 @@ fi
 
 # 2. fnm 安装（--skipFnm 跳过）
 if [ "$SKIP_FNM" = false ]; then
-  echo -e "\n🔧 开始 fnm 安装..."
-  # 检测 unzip/curl，缺失则安装
-  if ! command_exists "unzip"; then
-    echo "⚠️  未检测到 unzip，正在安装..."
-    sudo apt-get update &> /dev/null
-    sudo apt-get install -y unzip &> /dev/null || {
-      echo "❌ unzip 安装失败！请检查网络"
-      exit 1
-    }
-  fi
-  if ! command_exists "curl"; then
-    echo "⚠️  未检测到 curl，正在安装..."
-    sudo apt-get install -y curl &> /dev/null || {
-      echo "❌ curl 安装失败！请检查网络"
-      exit 1
-    }
-  fi
-  echo "✅ fnm 依赖（unzip + curl）已就绪"
-
   # 检测 fnm 是否已安装
   if command_exists "fnm"; then
     echo "✅ fnm 已安装（版本：$(fnm --version)），无需重复安装"
   else
+    echo -e "\n🔧 开始 fnm 安装..."
+    # 检测 unzip/curl，缺失则安装
+    if ! command_exists "unzip"; then
+      echo "⚠️  未检测到 unzip，正在安装..."
+      sudo apt-get update &> /dev/null
+      sudo apt-get install -y unzip &> /dev/null || {
+        echo "❌ unzip 安装失败！请检查网络"
+        exit 1
+      }
+    fi
+    if ! command_exists "curl"; then
+      echo "⚠️  未检测到 curl，正在安装..."
+      sudo apt-get install -y curl &> /dev/null || {
+        echo "❌ curl 安装失败！请检查网络"
+        exit 1
+      }
+    fi
+    echo "✅ fnm 依赖（unzip + curl）已就绪"
     # 预处理 fnm 安装目录权限（解决 Permission denied 问题）
     FNM_INSTALL_DIR="/home/$USER/.local/share/fnm"
     mkdir -p "$FNM_INSTALL_DIR"
