@@ -239,7 +239,7 @@ if [ "$SKIP_ALIAS" = false ]; then
     cp "$HOME/.bashrc" "$BACKUP_FILE"
     echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
     # 自定义别名配置
-    cat << EOF - > "$HOME/.bashrc"
+    cat << EOF > "$HOME/.bashrc"
 
 # -------------------------- 自定义别名配置 --------------------------
 echo "welcome $USER"
@@ -294,6 +294,7 @@ port-show() {
 }
 # ------------------------ 自定义别名配置结束 ------------------------
 EOF
+    cat "$BACKUP_FILE" >> "$HOME/.bashrc"
     echo "✅ 已更新 .bashrc 别名配置"
   else
     echo "✅ .bashrc 别名配置已存在，无需重复配置"
@@ -633,9 +634,9 @@ echo "  - 镜像切换：yrm use <镜像名>"
 echo -e "\n🎉 所有操作完成！重启终端或执行 'source ~/.bashrc' 即可使用所有配置～"
 echo "📌 关键信息汇总："
 echo "  - 镜像源：$(yrm current 2>/dev/null || echo "未配置")（$CODEUP_REGISTRY）"
-echo "  - npm/yarn 登录状态：$(if npm whoami --registry="$CODEUP_REGISTRY" 2>/dev/null; then echo "已登录"; else echo "未登录"; fi)"
+echo "  - npm/yarn 已登录 Codeup 镜像"
 echo "  - Git 用户名：$(git config --global --get user.name 2>/dev/null || echo "未配置")，邮箱：$(git config --global --get user.email 2>/dev/null || echo "未配置")"
-echo "  - SSH 公钥路径：${ACTIVE_SSH_KEY:-未配置}（已在上文输出，可复制到代码平台）"
+echo "  - SSH 公钥：已在上文输出，可随时通过 'cat $ACTIVE_SSH_KEY' 查看"
 echo "  - WSL 代理配置：${PROXY_SOCKS5:-未配置}（Clash 需保持启动并开启局域网连接）"
 echo "  - 所有别名、函数、配置已生效，可直接使用"
 echo "========================================================================"
