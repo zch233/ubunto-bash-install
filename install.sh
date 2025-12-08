@@ -580,7 +580,6 @@ if [ "$SKIP_GUPO_TOOLS" = false ] && command_exists "npm"; then
   packages=(
     "gupo-deploy"
     "gupo-cli"
-    "gupo-imagemin"
     "@gupo-admin/cli"
     "cnpm"
   )
@@ -602,6 +601,21 @@ if [ "$SKIP_GUPO_TOOLS" = false ] && command_exists "npm"; then
       failed_packages+=("$pkg")
     fi
   done
+
+  if command_exists "cnpm"; then
+    echo -e "\n📦 正在安装 gupo-imagemin（使用 cnpm）..."
+    cnpm install -g gupo-imagemin --registry="$CODEUP_REGISTRY" || true
+    if command_exists "gupo-imagemin"; then
+          echo "✅ gupo-imagemin 安装完成"
+          ((success_count++))
+        else
+          echo "❌ gupo-imagemin 安装失败，自动跳过"
+          failed_packages+=("gupo-imagemin")
+        fi
+  else
+    echo -e "\n⚠️  未检测到 cnpm，跳过 gupo-imagemin 安装"
+    failed_packages+=("gupo-imagemin")
+  fi
 
   # 安装流程结束后，根据结果处理
   echo -e "\n📊 安装结果汇总："
