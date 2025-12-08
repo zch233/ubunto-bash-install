@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -eo pipefail  # 增强错误处理：管道错误退出
+set -eo pipefail
 # set -x             # 可选：执行时输出每个命令（方便调试，取消注释即可）
 
 # ======================== 配置区（统一管理地址/参数）========================
@@ -46,6 +46,7 @@ declare -A ALIAS_MAP=(
 # 检测命令是否存在
 command_exists() {
   command -v "$1" &> /dev/null
+  return $?
 }
 
 # 验证工具安装
@@ -74,17 +75,56 @@ confirm_continue() {
 safe_login() {
   local tool=$1
   local registry=$2
-  local login_cmd=""
+  local login_success=false
 
+  # 第一步：校验终端是否支持交互
+  if [ ! -t 0 ] || [ ! -t 1 ]; then
+    echo "❌ 错误：当前终端不支持交互式输入，请在原生终端执行脚本（非管道/后台）"
+    return 1
+  fi
+
+  # 第二步：清理 registry 末尾的 /（避免匹配问题）
+  local clean_registry=$(echo "$registry" | sed -e 's/\/$//')
+  local registry_core=$(echo "$clean_registry" | sed -e 's/^https:\/\///')
+
+  # 第三步：适配工具命令
   case "$tool" in
-    npm) login_cmd="npm login --registry=$registry";;
-    yarn) login_cmd="yarn login --registry=$registry";;
-    *) echo "❌ 不支持的工具：$tool"; return 1;;
+    npm)
+      echo -e "\n📢 【NPM 登录】请输入 Codeup 账号信息（用户名/密码/邮箱，地址：https://packages.aliyun.com/npm/npm-registry/guide）："
+      # 强制设置 registry
+      npm config set registry "$clean_registry" > /dev/null 2>&1
+      # 直接执行登录，所有IO绑定当前终端
+      npm login --registry="$clean_registry" < /dev/tty > /dev/tty 2>&1
+      local exit_code=$?
+      # 验证是否真的登录成功（通过读取 token）
+      local token=$(npm config get "//${registry_core}/:_authToken" 2>/dev/null)
+      if [ -n "$token" ] || [ $exit_code -eq 0 ]; then
+        login_success=true
+      fi
+      ;;
+    yarn)
+      # 同步失败则触发交互式登录
+      echo -e "\n📢 【Yarn 登录】复用 NPM 认证信息，可能需手动输入账号信息："
+      yarn login < /dev/tty > /dev/tty 2>&1
+      local exit_code=$?
+      # 验证 token
+      local yarn_token=$(yarn config get --home "//${registry_core}/:_authToken" 2>/dev/null)
+      if [ -n "$yarn_token" ] || [ $exit_code -eq 0 ]; then
+        login_success=true
+      fi
+      ;;
+    *)
+      echo "❌ 不支持的工具：$tool"
+      return 1
+      ;;
   esac
 
-  # 解决输入阻塞：指定终端类型 + 直接执行（不使用管道）
-  TERM=xterm-256color $login_cmd < /dev/tty
-  return $?
+  # 返回结果
+  if [ "$login_success" = true ]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # 检测 libc6 版本，返回适配的 Node.js 源地址
@@ -447,6 +487,7 @@ if [ "$SKIP_NPM_LOGIN" = false ] && command_exists "npm"; then
   echo -e "\n🔐 开始 npm 登录（Codeup 账号）..."
 
   # 检测文件是否存在
+  set +e
   if [ -f "$HOME/.npmrc" ]; then
     # 检测是否已登录
     grep -qE "$(echo "$CODEUP_REGISTRY" | sed -e 's/^.*\/\///' | sed -e 's/\//\\\//g'):_authToken=.+" "$HOME/.npmrc"
@@ -458,17 +499,22 @@ if [ "$SKIP_NPM_LOGIN" = false ] && command_exists "npm"; then
   if [ $? -eq 0 ]; then
     echo "✅ npm 已配置 Codeup 镜像认证（无需重复登录）"
   else
-    # 使用安全登录函数（解决输入阻塞）
-    safe_login "npm" "$CODEUP_REGISTRY"
-    login_exit_code=$?
-
-    if [ $login_exit_code -eq 0 ]; then
+    # 调用安全登录函数
+    if safe_login "npm" "$CODEUP_REGISTRY"; then
       echo "✅ npm 登录成功"
+      # 修复 npm config 权限提示
+      sudo chown -R "$USER:$(id -gn "$USER")" "$HOME/.config" 2>/dev/null || true
+
+      # 额外的 npm 配置
+      sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
+      echo 'always-auth=true' >> ~/.npmrc
+      echo 'save-prefix=""' >> ~/.npmrc
     else
-      echo "❌ npm 登录失败（错误码：$login_exit_code）"
+      echo "❌ npm 登录失败"
       confirm_continue "继续执行其他步骤"
     fi
   fi
+  set -e
 elif [ "$SKIP_NPM_LOGIN" = true ]; then
   echo -e "\n⚠️  已跳过 npm 登录"
 else
@@ -478,6 +524,7 @@ fi
 # 7. yarn 登录（--skipYarnLogin 跳过）
 if [ "$SKIP_YARN_LOGIN" = false ] && command_exists "yarn"; then
   echo -e "\n🔐 开始 yarn 登录（与 npm 账号一致）..."
+  set +e
   if [ -f "$HOME/.yarnrc" ]; then
     # 检测是否已登录
     grep -qE "$(echo "$CODEUP_REGISTRY" | sed -e 's/^.*\/\///' | sed -e 's/\//\\\//g'):_authToken\" \".+\"" "$HOME/.yarnrc"
@@ -489,17 +536,15 @@ if [ "$SKIP_YARN_LOGIN" = false ] && command_exists "yarn"; then
   if [ $? -eq 0 ]; then
     echo "✅ yarn 已配置 Codeup 镜像认证（无需重复登录）"
   else
-    # 使用安全登录函数（解决输入阻塞）
-    safe_login "yarn" "$CODEUP_REGISTRY"
-    login_exit_code=$?
-
-    if [ $login_exit_code -eq 0 ]; then
-      echo "✅ yarn 登录成功"
+    # 调用安全登录函数
+    if safe_login "yarn" "$CODEUP_REGISTRY"; then
+      echo "✅ yarn 登录成功（复用 NPM 认证/手动登录）"
     else
-      echo -e "\n❌ yarn 登录失败（错误码：$login_exit_code）"
+      echo "❌ yarn 登录失败"
       confirm_continue "是否跳过 yarn 登录继续执行其他步骤？"
     fi
   fi
+  set -e
 elif [ "$SKIP_YARN_LOGIN" = true ]; then
   echo -e "\n⚠️  已跳过 yarn 登录"
 else
@@ -560,11 +605,6 @@ if [ "$SKIP_GIT_CONFIG" = false ]; then
     git config --global user.email "$GIT_USER_EMAIL"
     git config --global core.quotepath false
     git config --global core.ignorecase false
-
-    # npm 配置
-    sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
-    echo 'always-auth=true' >> ~/.npmrc
-    echo 'save-prefix=""' >> ~/.npmrc
 
     echo "✅ Git 配置完成"
     git config --global --list | grep -E 'user.name|user.email|core.autocrlf'
