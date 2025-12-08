@@ -90,7 +90,8 @@ safe_login() {
   # 第三步：适配工具命令
   case "$tool" in
     npm)
-      echo -e "\n📢 【NPM 登录】请输入 Codeup 账号信息（用户名/密码/邮箱，地址：https://packages.aliyun.com/npm/npm-registry/guide）："
+      echo -e "\n📢 【NPM 登录】请输入 Codeup 账号信息（用户名/密码/邮箱）："
+      echo -e "\n📢 【NPM 登录】账号信息获取地址：https://packages.aliyun.com/npm/npm-registry/guide"
       # 强制设置 registry
       npm config set registry "$clean_registry" > /dev/null 2>&1
       # 直接执行登录，所有IO绑定当前终端
@@ -354,14 +355,14 @@ if [ "$SKIP_FNM" = false ]; then
     if ! command_exists "unzip"; then
       echo "⚠️  未检测到 unzip，正在安装..."
       sudo apt-get update &> /dev/null
-      sudo apt-get install -y -v unzip &> /dev/null || {
+      sudo apt-get install -y unzip &> /dev/null || {
         echo "❌ unzip 安装失败！请检查网络"
         exit 1
       }
     fi
     if ! command_exists "curl"; then
       echo "⚠️  未检测到 curl，正在安装..."
-      sudo apt-get install -y -v curl &> /dev/null || {
+      sudo apt-get install -y curl &> /dev/null || {
         echo "❌ curl 安装失败！请检查网络"
         exit 1
       }
@@ -378,22 +379,22 @@ if [ "$SKIP_FNM" = false ]; then
       echo "✅ fnm 官方地址安装成功"
     elif curl -fvSL "$FNM_INSTALL_URL_MIRROR" | bash; then
       echo "✅ fnm 镜像地址安装成功"
-    else
-      echo "❌ fnm 安装失败！是否跳过？"
-      confirm_continue "继续执行其他步骤"
-    fi
 
-    # 配置环境变量（避免重复配置）
-    if ! grep -q '# -------------------------- fnm 自动适配 --------------------------' "$HOME/.bashrc"; then
+      # 配置环境变量（避免重复配置）
+      if ! grep -q '# -------------------------- fnm 自动适配 --------------------------' "$HOME/.bashrc"; then
       cat << EOF >> "$HOME/.bashrc"
 
 # -------------------------- fnm 自动适配 --------------------------
 eval "\$(fnm env --use-on-cd --shell bash)"
 # ------------------------ fnm 自动适配配置结束 ------------------------
 EOF
-      echo "✅ fnm 环境变量已配置"
+        echo "✅ fnm 环境变量已配置"
+      else
+        echo "✅ fnm 环境变量已存在，无需重复配置"
+      fi
     else
-      echo "✅ fnm 环境变量已存在，无需重复配置"
+      echo "❌ fnm 安装失败！是否跳过？"
+      confirm_continue "继续执行其他步骤"
     fi
   fi
   echo "✅ fnm 配置完成"
