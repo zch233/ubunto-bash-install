@@ -91,7 +91,7 @@ safe_login() {
   case "$tool" in
     npm)
       echo -e "\n📢 【NPM 登录】请输入 Codeup 账号信息（用户名/密码/邮箱）："
-      echo -e "\n📢 【NPM 登录】账号信息获取地址：https://packages.aliyun.com/npm/npm-registry/guide"
+      echo -e "📢 【NPM 登录】账号信息获取地址：\033[4;94mhttps://packages.aliyun.com/npm/npm-registry/guide\033[0m \n"
       # 强制设置 registry
       npm config set registry "$clean_registry" > /dev/null 2>&1
       # 直接执行登录，所有IO绑定当前终端
