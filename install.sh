@@ -505,6 +505,27 @@ if [ "$SKIP_NPM_LOGIN" = false ] && command_exists "npm"; then
       echo "✅ npm 登录成功"
       # 修复 npm config 权限提示
       sudo chown -R "$USER:$(id -gn "$USER")" "$HOME/.config" 2>/dev/null || true
+      # npm 全局安装权限不足，修改 npm 全局目录
+      BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
+      cp "$HOME/.bashrc" "$BACKUP_FILE"
+      echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
+      if [ -f "$HOME/.npm-global" ]; then
+        rm -f "$HOME/.npm-global"
+        echo "⚠️ 已清理错误创建的 .npm-global 文件"
+      fi
+      mkdir -p "$HOME/.npm-global"
+      npm config set prefix "$HOME/.npm-global"
+      echo "✅ 已设置 npm 全局目录为：$HOME/.npm-global"
+      # 加载刚写入的 .bashrc 配置，让 proxy-test/proxy-on/proxy-off 函数生效
+      PATH_CONFIG="export PATH=\"$HOME/.npm-global/bin:\$PATH\""
+      # 先检查是否已存在，避免重复添加
+      if ! grep -qxF "$PATH_CONFIG" "$HOME/.bashrc"; then
+        echo "$PATH_CONFIG" >> "$HOME/.bashrc"
+        echo "✅ 已将 npm PATH 配置添加到 .bashrc"
+      else
+        echo "ℹ️ npm PATH 配置已存在，无需重复添加"
+      fi
+      bash -i -c "source \"$HOME/.bashrc\" >/dev/null 2>&1; echo '✅ 已加载 .bashrc';"
 
       # 额外的 npm 配置
       sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
@@ -555,11 +576,44 @@ fi
 # 8. gupo 工具安装（--skipGupoTools 跳过）
 if [ "$SKIP_GUPO_TOOLS" = false ] && command_exists "npm"; then
   echo -e "\n🔧 开始 gupo 工具安装..."
-  if npm install -g gupo-deploy gupo-cli gupo-imagemin @gupo-admin/cli --registry="$CODEUP_REGISTRY"; then
-    echo "✅ gupo 工具安装完成"
-  else
-    echo "❌ gupo 工具安装失败！是否跳过？"
+  # 定义要安装的包列表
+  packages=(
+    "gupo-deploy"
+    "gupo-cli"
+    "gupo-imagemin"
+    "@gupo-admin/cli"
+    "cnpm"
+  )
+
+  # 记录安装成功的包数量
+  success_count=0
+  # 记录安装失败的包列表
+  failed_packages=()
+
+  # 遍历包列表，逐个安装（失败自动跳过）
+  for pkg in "${packages[@]}"; do
+    echo -e "\n📦 正在安装 $pkg..."
+    npm install -g "$pkg" --registry="$CODEUP_REGISTRY" || true
+    if command_exists "$(echo "$pkg" | sed 's/@gupo-admin\///')"; then
+      echo "✅ $pkg 安装完成"
+      ((success_count++))
+    else
+      echo "❌ $pkg 安装失败，自动跳过，继续安装下一个包"
+      failed_packages+=("$pkg")
+    fi
+  done
+
+  # 安装流程结束后，根据结果处理
+  echo -e "\n📊 安装结果汇总："
+  echo "✅ 成功安装：$success_count 个包"
+  echo "❌ 失败跳过：${#failed_packages[@]} 个包（${failed_packages[*]:-无}）"
+
+  # 仅当所有包都安装失败时，提示是否继续执行其他步骤
+  if [ $success_count -eq 0 ]; then
+    echo -e "\n❌ 所有 gupo 工具均安装失败！"
     confirm_continue "继续执行其他步骤"
+  else
+    echo -e "\n🎉 gupo 工具安装流程完成（部分包已跳过）"
   fi
 elif [ "$SKIP_GUPO_TOOLS" = true ]; then
   echo -e "\n⚠️  已跳过 gupo 工具安装"
@@ -573,7 +627,7 @@ if [ "$SKIP_GIT_CONFIG" = false ]; then
   # 安装 Git（未安装则安装）
   if ! command_exists "git"; then
     echo "⚠️  未检测到 Git，正在安装..."
-    sudo apt-get install -y -v git || {
+    sudo apt-get install -y git || {
       echo "❌ Git 安装失败！"
       exit 1
     }
