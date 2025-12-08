@@ -480,10 +480,10 @@ if [ "$SKIP_YARN_LOGIN" = false ] && command_exists "yarn"; then
   echo -e "\n🔐 开始 yarn 登录（与 npm 账号一致）..."
   if [ -f "$HOME/.yarnrc" ]; then
     # 检测是否已登录
-   grep -qE "$(echo "$CODEUP_REGISTRY" | sed -e 's/^.*\/\///' | sed -e 's/\//\\\//g'):_authToken\" \".+\"" "$HOME/.yarnrc"
+    grep -qE "$(echo "$CODEUP_REGISTRY" | sed -e 's/^.*\/\///' | sed -e 's/\//\\\//g'):_authToken\" \".+\"" "$HOME/.yarnrc"
   else
     # 文件不存在时，强制返回未匹配（退出码 1）
-    false
+    echo ".yarnrc 文件不存在"
   fi
 
   if [ $? -eq 0 ]; then
