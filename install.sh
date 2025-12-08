@@ -6,9 +6,9 @@ set -eo pipefail
 # ======================== 配置区（统一管理地址/参数）========================
 # 阿里云 Codeup 镜像地址
 CODEUP_REGISTRY="https://packages.aliyun.com/5eb3e37038076f00011bcd4a/npm/npm-registry/"
-# fnm 安装地址（优先 jsdelivr 镜像，失败回退官方）
-FNM_INSTALL_URL_MIRROR="https://cdn.jsdelivr.net/gh/Schniz/fnm@master/.ci/install.sh"
+# fnm 安装地址（优先官方，失败回退jsdelivr镜像）
 FNM_INSTALL_URL_OFFICIAL="https://fnm.vercel.app/install"
+FNM_INSTALL_URL_MIRROR="https://cdn.jsdelivr.net/gh/Schniz/fnm@master/.ci/install.sh"
 # Node.js 源地址（自动适配 libc 版本）
 NODE_LTS_SETUP_URL="https://deb.nodesource.com/setup_lts.x"
 NODE_LTS_SETUP_URL_OLD="https://deb.nodesource.com/setup_14.x"
@@ -374,10 +374,10 @@ if [ "$SKIP_FNM" = false ]; then
     chmod -R 755 "$FNM_INSTALL_DIR"
     echo "✅ 已修复 fnm 安装目录权限：$FNM_INSTALL_DIR"
     # 安装 fnm（镜像优先）
-    if curl -fsSL "$FNM_INSTALL_URL_MIRROR" | bash; then
-      echo "✅ fnm 镜像地址安装成功"
-    elif curl -fsSL "$FNM_INSTALL_URL_OFFICIAL" | bash; then
+    if curl -fsSL "$FNM_INSTALL_URL_OFFICIAL" | bash; then
       echo "✅ fnm 官方地址安装成功"
+    elif curl -fsSL "$FNM_INSTALL_URL_MIRROR" | bash; then
+      echo "✅ fnm 镜像地址安装成功"
     else
       echo "❌ fnm 安装失败！是否跳过？"
       confirm_continue "继续执行其他步骤"
