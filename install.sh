@@ -11,7 +11,7 @@ FNM_INSTALL_URL_OFFICIAL="https://fnm.vercel.app/install"
 FNM_INSTALL_URL_MIRROR="https://cdn.jsdelivr.net/gh/Schniz/fnm@master/.ci/install.sh"
 # Node.js 源地址（自动适配 libc 版本）
 NODE_LTS_SETUP_URL="https://deb.nodesource.com/setup_lts.x"
-NODE_LTS_SETUP_URL_OLD="https://deb.nodesource.com/setup_14.x"
+NODE_LTS_SETUP_URL_OLD="https://deb.nodesource.com/setup_16.x"
 
 # 跳过参数默认值（false=不跳过）
 SKIP_FLAG=false
@@ -133,7 +133,7 @@ get_node_setup_url() {
   local libc_version=$(ldd --version | grep -oP 'GLIBC \K[0-9]+\.[0-9]+' | head -n 1)
   # 对比版本（需要 bc 工具支持浮点比较）
   if command_exists "bc" && (( $(echo "$libc_version < 2.28" | bc -l) )); then
-    echo "⚠️ 检测到系统 libc6 版本为 $libc_version（<2.28），将使用 Node.js 14.x 兼容版本" >&2
+    echo "⚠️ 检测到系统 libc6 版本为 $libc_version（<2.28），将使用 Node.js 16.x 兼容版本" >&2
     echo "$NODE_LTS_SETUP_URL_OLD"
   else
     echo "$NODE_LTS_SETUP_URL"
@@ -374,9 +374,9 @@ if [ "$SKIP_FNM" = false ]; then
     chmod -R 755 "$FNM_INSTALL_DIR"
     echo "✅ 已修复 fnm 安装目录权限：$FNM_INSTALL_DIR"
     # 安装 fnm（镜像优先）
-    if curl -fsSL "$FNM_INSTALL_URL_OFFICIAL" | bash; then
+    if curl -fvSL "$FNM_INSTALL_URL_OFFICIAL" | bash; then
       echo "✅ fnm 官方地址安装成功"
-    elif curl -fsSL "$FNM_INSTALL_URL_MIRROR" | bash; then
+    elif curl -fvSL "$FNM_INSTALL_URL_MIRROR" | bash; then
       echo "✅ fnm 镜像地址安装成功"
     else
       echo "❌ fnm 安装失败！是否跳过？"
@@ -428,7 +428,7 @@ if [ "$SKIP_NODE" = false ]; then
     echo "✅ 将使用 Node.js 源地址：$NODE_SETUP_URL"
 
     # 安装新版 Node.js
-    if curl -fsSL "$NODE_SETUP_URL" | sudo -E bash - && sudo apt-get install -y -v nodejs; then
+    if curl -fsSL "$NODE_SETUP_URL" | sudo -E bash - && sudo apt-get install -y nodejs; then
       NODE_VERSION=$(node -v)
       NPM_VERSION=$(npm -v)
       echo "✅ Node.js 安装成功："
