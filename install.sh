@@ -354,14 +354,14 @@ if [ "$SKIP_FNM" = false ]; then
     if ! command_exists "unzip"; then
       echo "⚠️  未检测到 unzip，正在安装..."
       sudo apt-get update &> /dev/null
-      sudo apt-get install -y unzip &> /dev/null || {
+      sudo apt-get install -y -v unzip &> /dev/null || {
         echo "❌ unzip 安装失败！请检查网络"
         exit 1
       }
     fi
     if ! command_exists "curl"; then
       echo "⚠️  未检测到 curl，正在安装..."
-      sudo apt-get install -y curl &> /dev/null || {
+      sudo apt-get install -y -v curl &> /dev/null || {
         echo "❌ curl 安装失败！请检查网络"
         exit 1
       }
@@ -428,7 +428,7 @@ if [ "$SKIP_NODE" = false ]; then
     echo "✅ 将使用 Node.js 源地址：$NODE_SETUP_URL"
 
     # 安装新版 Node.js
-    if curl -fsSL "$NODE_SETUP_URL" | sudo -E bash - && sudo apt-get install -y nodejs; then
+    if curl -fsSL "$NODE_SETUP_URL" | sudo -E bash - && sudo apt-get install -y -v nodejs; then
       NODE_VERSION=$(node -v)
       NPM_VERSION=$(npm -v)
       echo "✅ Node.js 安装成功："
@@ -572,7 +572,7 @@ if [ "$SKIP_GIT_CONFIG" = false ]; then
   # 安装 Git（未安装则安装）
   if ! command_exists "git"; then
     echo "⚠️  未检测到 Git，正在安装..."
-    sudo apt-get install -y git || {
+    sudo apt-get install -y -v git || {
       echo "❌ Git 安装失败！"
       exit 1
     }
