@@ -544,6 +544,7 @@ if [ "$SKIP_NPM_LOGIN" = false ] && command_exists "npm"; then
             echo "ℹ️ npm PATH 配置已存在，无需重复添加"
           fi
           bash -i -c "source \"$HOME/.bashrc\" >/dev/null 2>&1; echo '✅ 已加载 .bashrc';"
+          source "$HOME/.bashrc"
 
           # 额外的 npm 配置
           sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
@@ -590,11 +591,11 @@ fi
 if [ "$SKIP_GUPO_TOOLS" = false ] && command_exists "npm"; then
   echo -e "\n🔧 开始 gupo 工具安装..."
   # 定义要安装的包列表
-  packages=(
-    "gupo-deploy"
-    "gupo-cli"
-    "@gupo-admin/cli"
-    "cnpm"
+  declare -A packages=(
+    ["gupo-deploy"]="gupo-deploy"
+    ["gupo-cli"]="gupo-cli"
+    ["@gupo-admin/cli"]="gupo-admin"
+#    ["gupo-imagemin"]="gupo-imagemin"
   )
 
   # 记录安装成功的包数量
@@ -602,11 +603,15 @@ if [ "$SKIP_GUPO_TOOLS" = false ] && command_exists "npm"; then
   # 记录安装失败的包列表
   failed_packages=()
 
-  # 遍历包列表，逐个安装（失败自动跳过）
-  for pkg in "${packages[@]}"; do
-    echo -e "\n📦 正在安装 $pkg..."
-    npm install -g "$pkg" --registry="$CODEUP_REGISTRY" || true
-    if command_exists "$(echo "$pkg" | sed 's/@gupo-admin\///')"; then
+  # 遍历关联数组
+  for pkg in "${!packages[@]}"; do
+    cmd=${packages[$pkg]}  # 直接取命令名，无解析风险
+    echo -e "\n📦 正在安装 $pkg（命令名：$cmd）..."
+    # 实时输出安装日志 + 强制返回成功
+    { npm install -g "$pkg" --registry="$CODEUP_REGISTRY" --force 2>&1 | sed "s/^/[$pkg] /"; } || :
+
+    # 检测命令是否安装成功
+    if command_exists "$cmd"; then
       echo "✅ $pkg 安装完成"
       ((success_count++))
     else
@@ -614,21 +619,6 @@ if [ "$SKIP_GUPO_TOOLS" = false ] && command_exists "npm"; then
       failed_packages+=("$pkg")
     fi
   done
-
-  if command_exists "cnpm"; then
-    echo -e "\n📦 正在安装 gupo-imagemin（使用 cnpm）..."
-    cnpm install -g gupo-imagemin --registry="$CODEUP_REGISTRY" || true
-    if command_exists "gupo-imagemin"; then
-          echo "✅ gupo-imagemin 安装完成"
-          ((success_count++))
-        else
-          echo "❌ gupo-imagemin 安装失败，自动跳过"
-          failed_packages+=("gupo-imagemin")
-        fi
-  else
-    echo -e "\n⚠️  未检测到 cnpm，跳过 gupo-imagemin 安装"
-    failed_packages+=("gupo-imagemin")
-  fi
 
   # 安装流程结束后，根据结果处理
   echo -e "\n📊 安装结果汇总："
