@@ -216,16 +216,18 @@ if [ "$SKIP_PROXY" = false ]; then
   fi
 
   # 2. 获取 Clash 端口（默认 7890）
-  read -r -p "请输入 Windows Clash or Proxy 的 Socks5/Http 端口（默认 7890，直接回车使用默认值）：" CLASH_PORT < /dev/tty
+  read -r -p "请输入 Windows Clash or Proxy 的 Socks5/Http 端口（默认 7890，输入 0 代表没有代理，直接回车使用默认值）：" CLASH_PORT < /dev/tty
   CLASH_PORT=${CLASH_PORT:-7890}
+  if [ "$CLASH_PORT" = 0 ]; then
+    echo -e "\n🤢 太拉垮了，连个代理都没有"
+  else
+    # 3. 定义核心配置（单一数据源，仅维护一次）
+    PROXY_SOCKS5="socks5://$WINDOWS_IP:$CLASH_PORT"
+    PROXY_HTTP="http://$WINDOWS_IP:$CLASH_PORT"
+    NO_PROXY_LIST="localhost,127.0.0.1,172.0.0.0/8,192.168.0.0/16,.aliyun.com,.aliyuncs.com,.codeup.aliyun.com,.gupo.com.cn,packages.aliyun.com"
 
-  # 3. 定义核心配置（单一数据源，仅维护一次）
-  PROXY_SOCKS5="socks5://$WINDOWS_IP:$CLASH_PORT"
-  PROXY_HTTP="http://$WINDOWS_IP:$CLASH_PORT"
-  NO_PROXY_LIST="localhost,127.0.0.1,172.0.0.0/8,192.168.0.0/16,.aliyun.com,.aliyuncs.com,.codeup.aliyun.com,.gupo.com.cn,packages.aliyun.com"
-
-  # 4. 代理配置模板（仅写一次！复用给「写入.bashrc」和「脚本内加载」）
-  PROXY_TEMPLATE=$(cat << 'EOF'
+    # 4. 代理配置模板（仅写一次！复用给「写入.bashrc」和「脚本内加载」）
+    PROXY_TEMPLATE=$(cat << 'EOF'
 # -------------------------- WSL 代理配置（Clash）--------------------------
 PROXY_SOCKS5="{PROXY_SOCKS5}"
 PROXY_HTTP="{PROXY_HTTP}"
@@ -276,37 +278,37 @@ proxy-test() {
 }
 # --------------------------------------------------------------------------
 EOF
-  )
+    )
+    # 5. 复用模板：写入 .bashrc（保留原功能，供后续终端使用）
+    if ! grep -q "# -------------------------- WSL 代理配置（Clash）--------------------------" "$HOME/.bashrc"; then
+      BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
+      cp "$HOME/.bashrc" "$BACKUP_FILE"
+      echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
+      # 替换模板占位符并写入 .bashrc（修复 sed 分隔符为 |）
+      echo "$PROXY_TEMPLATE" | sed \
+        -e "s|{PROXY_SOCKS5}|$PROXY_SOCKS5|g" \
+        -e "s|{PROXY_HTTP}|$PROXY_HTTP|g" \
+        -e "s|{NO_PROXY_LIST}|$NO_PROXY_LIST|g" \
+        -e "s|{WINDOWS_IP}|$WINDOWS_IP|g" \
+        -e "s|{CLASH_PORT}|$CLASH_PORT|g" >> "$HOME/.bashrc"
+    else
+      echo "✅ WSL 代理配置（Clash）已存在，无需重复配置"
+    fi
 
-  # 5. 复用模板：写入 .bashrc（保留原功能，供后续终端使用）
-  if ! grep -q "# -------------------------- WSL 代理配置（Clash）--------------------------" "$HOME/.bashrc"; then
-    BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
-    cp "$HOME/.bashrc" "$BACKUP_FILE"
-    echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
-    # 替换模板占位符并写入 .bashrc（修复 sed 分隔符为 |）
-    echo "$PROXY_TEMPLATE" | sed \
+    # 6. 复用模板：在脚本内加载（让 proxy-test 等函数直接生效）
+    # 替换占位符 + 移除变量转义符，通过 eval 注入到当前脚本环境
+    eval "$(echo "$PROXY_TEMPLATE" | sed \
       -e "s|{PROXY_SOCKS5}|$PROXY_SOCKS5|g" \
       -e "s|{PROXY_HTTP}|$PROXY_HTTP|g" \
       -e "s|{NO_PROXY_LIST}|$NO_PROXY_LIST|g" \
       -e "s|{WINDOWS_IP}|$WINDOWS_IP|g" \
-      -e "s|{CLASH_PORT}|$CLASH_PORT|g" >> "$HOME/.bashrc"
-  else
-    echo "✅ WSL 代理配置（Clash）已存在，无需重复配置"
+      -e "s|{CLASH_PORT}|$CLASH_PORT|g" \
+      -e "s|\\\$|\$|g")"
+
+    # 7. 直接执行代理测试（脚本内已加载函数，可直接调用）
+    echo "✅ 代理配置完成（$PROXY_SOCKS5）"
+    proxy-test
   fi
-
-  # 6. 复用模板：在脚本内加载（让 proxy-test 等函数直接生效）
-  # 替换占位符 + 移除变量转义符，通过 eval 注入到当前脚本环境
-  eval "$(echo "$PROXY_TEMPLATE" | sed \
-    -e "s|{PROXY_SOCKS5}|$PROXY_SOCKS5|g" \
-    -e "s|{PROXY_HTTP}|$PROXY_HTTP|g" \
-    -e "s|{NO_PROXY_LIST}|$NO_PROXY_LIST|g" \
-    -e "s|{WINDOWS_IP}|$WINDOWS_IP|g" \
-    -e "s|{CLASH_PORT}|$CLASH_PORT|g" \
-    -e "s|\\\$|\$|g")"
-
-  # 7. 直接执行代理测试（脚本内已加载函数，可直接调用）
-  echo "✅ 代理配置完成（$PROXY_SOCKS5）"
-  proxy-test
 else
   echo -e "\n⚠️  已跳过 WSL 代理配置"
 fi
