@@ -55,32 +55,31 @@ verify_tool() {
   # 先判断工具是否存在
   if ! command_exists "$tool"; then
     echo "  ❌ $tool：未安装成功"
-    return
+    return 0  # 强制返回0，避免set -e
   fi
 
   # 定义常见的版本查询参数（按优先级排序，覆盖绝大多数工具）
   local version_params=("--version" "-v" "version" "--info" "-V")
-  local version="unknown"  # 默认版本为 unknown
+  local version_output=""
+  local final_version="unknown"  # 默认值：unknown
 
-  # 循环尝试不同的版本查询参数
+  # 循环尝试版本参数
   for param in "${version_params[@]}"; do
-    # 执行版本查询，捕获输出（忽略 stderr 避免报错刷屏）
-    # 用 head -n 1 取第一行，避免多行文输出干扰
-    local version_output=$("$tool" "$param" 2>/dev/null | head -n 1)
-
-    # 判断命令是否执行成功（$? 为 0 表示参数有效）
-    if [ $? -eq 0 ] && [ -n "$version_output" ]; then
-      # 提取版本号：兼容多种格式（如 "tool v1.2.3"、"1.2.3, build xxx"、"Version 1.2.3"）
-      # 正则匹配连续的数字+点号（核心版本号），忽略前缀后缀无关字符
-      version=$(echo "$version_output" | grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1)
-      # 若未提取到数字版本（如部分工具输出 "latest"），直接用原始输出的前30个字符
-      [ -z "$version" ] && version=$(echo "$version_output" | cut -c 1-30)
-      break  # 找到有效版本，退出循环
+    # 捕获版本输出，强制容错
+    version_output=$("$tool" "$param" 2>/dev/null | head -n 1 || true)
+    # 仅当输出非空时，尝试提取数字版本
+    if [ -n "$version_output" ]; then
+      # 仅匹配 数字.数字(.数字) 格式，无则保持 unknown
+      final_version=$(echo "$version_output" | grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1 || true)
+      # 若提取到空（非数字），重置为 unknown
+      [ -z "$final_version" ] && final_version="unknown"
+      break  # 找到输出就停止，不管是否提取到数字
     fi
   done
 
-  # 输出结果
-  echo "  ✅ $tool：$version"
+  # 输出结果：仅显示数字版本或 unknown
+  echo "  ✅ $tool：$final_version"
+  return 0  # 确保函数永不返回非0
 }
 
 # 提示用户确认（可选继续）
@@ -406,7 +405,7 @@ if [ "$SKIP_FNM" = false ]; then
 
       # 配置环境变量（避免重复配置）
       if ! grep -q '# -------------------------- fnm 自动适配 --------------------------' "$HOME/.bashrc"; then
-      cat << EOF >> "$HOME/.bashrc"
+        cat << EOF >> "$HOME/.bashrc"
 
 # -------------------------- fnm 自动适配 --------------------------
 eval "\$(fnm env --use-on-cd --shell bash)"
@@ -471,7 +470,37 @@ fi
 # 4. 全局 npm 工具安装（--skipNpmTools 跳过）
 if [ "$SKIP_NPM_TOOLS" = false ] && command_exists "npm"; then
   echo -e "\n🔧 开始全局 npm 工具安装..."
-  if sudo npm install -g pnpm yarn yrm typescript git-open; then
+
+  # 修复 npm config 权限提示
+  sudo chown -R "$USER:$(id -gn "$USER")" "$HOME/.config" 2>/dev/null || true
+  # npm 全局安装权限不足，修改 npm 全局目录
+  BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$HOME/.bashrc" "$BACKUP_FILE"
+  echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
+  if [ -f "$HOME/.npm-global" ]; then
+    rm -f "$HOME/.npm-global"
+    echo "⚠️ 已清理错误创建的 .npm-global 文件"
+  fi
+  mkdir -p "$HOME/.npm-global"
+  npm config set prefix "$HOME/.npm-global"
+  echo "✅ 已设置 npm 全局目录为：$HOME/.npm-global"
+  # 加载刚写入的 .bashrc 配置，让 proxy-test/proxy-on/proxy-off 函数生效
+  PATH_CONFIG="export PATH=\"$HOME/.npm-global/bin:\$PATH\""
+  # 先检查是否已存在，避免重复添加
+  if ! grep -qxF "$PATH_CONFIG" "$HOME/.bashrc"; then
+    echo "$PATH_CONFIG" >> "$HOME/.bashrc"
+    echo "✅ 已将 npm PATH 配置添加到 .bashrc"
+  else
+    echo "ℹ️ npm PATH 配置已存在，无需重复添加"
+  fi
+  bash -i -c "source \"$HOME/.bashrc\" >/dev/null 2>&1; echo '✅ 已加载 .bashrc';"
+  source "$HOME/.bashrc"
+  # 额外的 npm 配置
+  sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
+  echo 'always-auth=true' >> ~/.npmrc
+  echo 'save-prefix=""' >> ~/.npmrc
+
+  if npm install -g pnpm yarn yrm typescript git-open; then
     echo "✅ 全局工具安装完成（pnpm/yarn/yrm/typescript/git-open）"
   else
     echo "❌ 全局工具安装失败！是否跳过？"
@@ -517,44 +546,15 @@ if [ "$SKIP_NPM_LOGIN" = false ] && command_exists "npm"; then
 
     if grep -qE "^//$(echo "$CODEUP_REGISTRY" | sed -e 's#^[a-zA-Z0-9]\+://##' -e 's#/npm-registry/.*$##' -e 's#\.#\\.#g' -e 's#/#\\/#g')/:_authToken=.+" "$HOME/.npmrc"; then
         echo "✅ npm 已配置 Codeup 镜像认证（无需重复登录）"
+    else
+      # 调用安全登录函数
+      if safe_login "npm" "$CODEUP_REGISTRY"; then
+        echo "✅ npm 登录成功"
       else
-        # 调用安全登录函数
-        if safe_login "npm" "$CODEUP_REGISTRY"; then
-          echo "✅ npm 登录成功"
-          # 修复 npm config 权限提示
-          sudo chown -R "$USER:$(id -gn "$USER")" "$HOME/.config" 2>/dev/null || true
-          # npm 全局安装权限不足，修改 npm 全局目录
-          BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
-          cp "$HOME/.bashrc" "$BACKUP_FILE"
-          echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
-          if [ -f "$HOME/.npm-global" ]; then
-            rm -f "$HOME/.npm-global"
-            echo "⚠️ 已清理错误创建的 .npm-global 文件"
-          fi
-          mkdir -p "$HOME/.npm-global"
-          npm config set prefix "$HOME/.npm-global"
-          echo "✅ 已设置 npm 全局目录为：$HOME/.npm-global"
-          # 加载刚写入的 .bashrc 配置，让 proxy-test/proxy-on/proxy-off 函数生效
-          PATH_CONFIG="export PATH=\"$HOME/.npm-global/bin:\$PATH\""
-          # 先检查是否已存在，避免重复添加
-          if ! grep -qxF "$PATH_CONFIG" "$HOME/.bashrc"; then
-            echo "$PATH_CONFIG" >> "$HOME/.bashrc"
-            echo "✅ 已将 npm PATH 配置添加到 .bashrc"
-          else
-            echo "ℹ️ npm PATH 配置已存在，无需重复添加"
-          fi
-          bash -i -c "source \"$HOME/.bashrc\" >/dev/null 2>&1; echo '✅ 已加载 .bashrc';"
-          source "$HOME/.bashrc"
-
-          # 额外的 npm 配置
-          sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
-          echo 'always-auth=true' >> ~/.npmrc
-          echo 'save-prefix=""' >> ~/.npmrc
-        else
-          echo "❌ npm 登录失败"
-          confirm_continue "继续执行其他步骤"
-        fi
+        echo "❌ npm 登录失败"
+        confirm_continue "继续执行其他步骤"
       fi
+    fi
   else
     # 文件不存在时，强制返回未匹配（退出码 1）
     echo ".npmrc 文件不存在"
@@ -569,13 +569,17 @@ fi
 if [ "$SKIP_YARN_LOGIN" = false ] && command_exists "yarn"; then
   echo -e "\n🔐 开始 yarn 登录（与 npm 账号一致）..."
   if [ -f "$HOME/.yarnrc" ]; then
-    # yarn 无法检测是否已登录，但是可以在登录一次
-    # 调用安全登录函数
-    if safe_login "yarn" "$CODEUP_REGISTRY"; then
-      echo "✅ yarn 登录成功（复用 NPM 认证/手动登录）"
+    # 检测是否已登录
+    if grep -qE '^[[:space:]]*email[[:space:]]+["'"'"'][^"'"'"']+["'"'"']' "$HOME/.yarnrc" && grep -qE '^[[:space:]]*username[[:space:]]+["'"'"'][^"'"'"']+["'"'"']' "$HOME/.yarnrc"; then
+      echo "✅ yarn 已配置 Codeup 镜像认证（无需重复登录）"
     else
-      echo "❌ yarn 登录失败"
-      confirm_continue "是否跳过 yarn 登录继续执行其他步骤？"
+      # 调用安全登录函数
+      if safe_login "yarn" "$CODEUP_REGISTRY"; then
+        echo "✅ yarn 登录成功（复用 NPM 认证/手动登录）"
+      else
+        echo "❌ yarn 登录失败"
+        confirm_continue "是否跳过 yarn 登录继续执行其他步骤？"
+      fi
     fi
   else
     # 文件不存在时，强制返回未匹配（退出码 1）
@@ -608,12 +612,12 @@ if [ "$SKIP_GUPO_TOOLS" = false ] && command_exists "npm"; then
     cmd=${packages[$pkg]}  # 直接取命令名，无解析风险
     echo -e "\n📦 正在安装 $pkg（命令名：$cmd）..."
     # 实时输出安装日志 + 强制返回成功
-    { npm install -g "$pkg" --registry="$CODEUP_REGISTRY" --force 2>&1 | sed "s/^/[$pkg] /"; } || :
+    npm install -g "$pkg" --registry="$CODEUP_REGISTRY" --force 2>&1 | sed "s|^|[$pkg] |" || :
 
     # 检测命令是否安装成功
     if command_exists "$cmd"; then
       echo "✅ $pkg 安装完成"
-      ((success_count++))
+      ((success_count++)) || :
     else
       echo "❌ $pkg 安装失败，自动跳过，继续安装下一个包"
       failed_packages+=("$pkg")
@@ -729,7 +733,6 @@ verify_tool "yrm"
 verify_tool "tsc"
 verify_tool "git-open"
 verify_tool "fnm"
-verify_tool "gupo-deploy"
 
 echo -e "\n📋 自定义别名清单："
 for alias_key in "${!ALIAS_MAP[@]}"; do
