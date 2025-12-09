@@ -215,38 +215,32 @@ if [ "$SKIP_PROXY" = false ]; then
     done
   fi
 
-  # 获取 Clash 端口
+  # 2. 获取 Clash 端口（默认 7890）
   read -r -p "请输入 Windows Clash or Proxy 的 Socks5/Http 端口（默认 7890，直接回车使用默认值）：" CLASH_PORT < /dev/tty
   CLASH_PORT=${CLASH_PORT:-7890}
 
-  # 定义代理地址
+  # 3. 定义核心配置（单一数据源，仅维护一次）
   PROXY_SOCKS5="socks5://$WINDOWS_IP:$CLASH_PORT"
   PROXY_HTTP="http://$WINDOWS_IP:$CLASH_PORT"
+  NO_PROXY_LIST="localhost,127.0.0.1,172.0.0.0/8,192.168.0.0/16,.aliyun.com,.aliyuncs.com,.codeup.aliyun.com,.gupo.com.cn,packages.aliyun.com"
 
-  # 先备份 .bashrc（避免重复备份）
-  if ! grep -q "# -------------------------- WSL 代理配置（Clash）--------------------------" "$HOME/.bashrc"; then
-    BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
-    cp "$HOME/.bashrc" "$BACKUP_FILE"
-    echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
-    cat << EOF >> "$HOME/.bashrc"
-
+  # 4. 代理配置模板（仅写一次！复用给「写入.bashrc」和「脚本内加载」）
+  PROXY_TEMPLATE=$(cat << 'EOF'
 # -------------------------- WSL 代理配置（Clash）--------------------------
-PROXY_SOCKS5="$PROXY_SOCKS5"
-PROXY_HTTP="$PROXY_HTTP"
-export ALL_PROXY=\$PROXY_HTTP  # 优先用 HTTP 代理，兼容性更好
-export HTTP_PROXY=\$PROXY_HTTP
-export HTTPS_PROXY=\$PROXY_HTTP
-export SOCKS_PROXY=\$PROXY_SOCKS5
-
-# 国内域名/IP 不走代理（优化访问速度，避免冲突）
-export NO_PROXY="localhost,127.0.0.1,172.0.0.0/8,192.168.0.0/16,.aliyun.com,.aliyuncs.com,.codeup.aliyun.com,.gupo.com.cn,packages.aliyun.com"
+PROXY_SOCKS5="{PROXY_SOCKS5}"
+PROXY_HTTP="{PROXY_HTTP}"
+export ALL_PROXY=$PROXY_HTTP  # 优先用 HTTP 代理，兼容性更好
+export HTTP_PROXY=$PROXY_HTTP
+export HTTPS_PROXY=$PROXY_HTTP
+export SOCKS_PROXY=$PROXY_SOCKS5
+export NO_PROXY="{NO_PROXY_LIST}"
 
 proxy-on() {
-  export ALL_PROXY=\$PROXY_HTTP
-  export HTTP_PROXY=\$PROXY_HTTP
-  export HTTPS_PROXY=\$PROXY_HTTP
-  export SOCKS_PROXY=\$PROXY_SOCKS5
-  echo "✅ 代理已开启（\$PROXY_SOCKS5）"
+  export ALL_PROXY=$PROXY_HTTP
+  export HTTP_PROXY=$PROXY_HTTP
+  export HTTPS_PROXY=$PROXY_HTTP
+  export SOCKS_PROXY=$PROXY_SOCKS5
+  echo "✅ 代理已开启（$PROXY_SOCKS5）"
 }
 
 proxy-off() {
@@ -255,41 +249,64 @@ proxy-off() {
 }
 
 proxy-test() {
-  if [ -z "\$ALL_PROXY" ]; then
+  if [ -z "$ALL_PROXY" ]; then
     echo -e "\n🔌 检测到代理未开启，正在自动开启..."
     proxy-on
   else
-    echo -e "\n🔌 代理已处于开启状态（当前代理：\$ALL_PROXY）"
+    echo -e "\n🔌 代理已处于开启状态（当前代理：$ALL_PROXY）"
   fi
 
   # 开始代理连通性测试
   echo -e "\n正在测试代理连通性（访问 Google 验证）..."
-  echo "  Windows IP：$WINDOWS_IP"
-  echo "  代理地址：\$PROXY_SOCKS5"
+  echo "  Windows IP：{WINDOWS_IP}"
+  echo "  代理地址：$PROXY_SOCKS5"
   echo "  超时时间：5 秒"
 
   # 输出关键连接日志，方便排查
-  curl -v --connect-timeout 5 https://www.google.com 2>&1 | grep -E 'Connected|Failed|timeout|refused'
+  curl -v --connect-timeout 5 https://www.google.com 2>&1 | grep -E 'Connected|Failed|timeout|refused' || true
   if curl -s --connect-timeout 5 https://www.google.com &> /dev/null; then
     echo "✅ 代理测试成功！可正常访问外网"
   else
     echo "❌ 代理测试失败！请检查："
     echo "  1. Windows Clash 是否已启动并开启「允许局域网连接」"
-    echo "  2. Clash 端口（$CLASH_PORT）是否与配置一致"
-    echo "  3. Windows 防火墙是否放行 $CLASH_PORT 端口"
+    echo "  2. Clash 端口（{CLASH_PORT}）是否与配置一致"
+    echo "  3. Windows 防火墙是否放行 {CLASH_PORT} 端口"
     echo "  4. Clash 节点是否可用（浏览器访问 Google 验证）"
   fi
 }
 # --------------------------------------------------------------------------
 EOF
+  )
+
+  # 5. 复用模板：写入 .bashrc（保留原功能，供后续终端使用）
+  if ! grep -q "# -------------------------- WSL 代理配置（Clash）--------------------------" "$HOME/.bashrc"; then
+    BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
+    cp "$HOME/.bashrc" "$BACKUP_FILE"
+    echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
+    # 替换模板占位符并写入 .bashrc（修复 sed 分隔符为 |）
+    echo "$PROXY_TEMPLATE" | sed \
+      -e "s|{PROXY_SOCKS5}|$PROXY_SOCKS5|g" \
+      -e "s|{PROXY_HTTP}|$PROXY_HTTP|g" \
+      -e "s|{NO_PROXY_LIST}|$NO_PROXY_LIST|g" \
+      -e "s|{WINDOWS_IP}|$WINDOWS_IP|g" \
+      -e "s|{CLASH_PORT}|$CLASH_PORT|g" >> "$HOME/.bashrc"
   else
     echo "✅ WSL 代理配置（Clash）已存在，无需重复配置"
   fi
 
+  # 6. 复用模板：在脚本内加载（让 proxy-test 等函数直接生效）
+  # 替换占位符 + 移除变量转义符，通过 eval 注入到当前脚本环境
+  eval "$(echo "$PROXY_TEMPLATE" | sed \
+    -e "s|{PROXY_SOCKS5}|$PROXY_SOCKS5|g" \
+    -e "s|{PROXY_HTTP}|$PROXY_HTTP|g" \
+    -e "s|{NO_PROXY_LIST}|$NO_PROXY_LIST|g" \
+    -e "s|{WINDOWS_IP}|$WINDOWS_IP|g" \
+    -e "s|{CLASH_PORT}|$CLASH_PORT|g" \
+    -e "s|\\\$|\$|g")"
+
+  # 7. 直接执行代理测试（脚本内已加载函数，可直接调用）
   echo "✅ 代理配置完成（$PROXY_SOCKS5）"
-  # 加载刚写入的 .bashrc 配置，让 proxy-test/proxy-on/proxy-off 函数生效
-  bash -i -c "source \"$HOME/.bashrc\" >/dev/null 2>&1; echo '✅ 已加载 .bashrc'; proxy-test"
-  source "$HOME/.bashrc"
+  proxy-test
 else
   echo -e "\n⚠️  已跳过 WSL 代理配置"
 fi
@@ -316,6 +333,8 @@ alias glog="git log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset
 alias gk="git cherry-pick"
 alias ys="yarn dev | yarn serve"
 alias code="cursor"
+alias start="explorer.exe"
+alias open="explorer.exe"
 alias gg="gupo-deploy -a -p"
 
 # 端口转发函数：动态获取 172 开头的 WSL IP（无需指定网卡名）
@@ -493,8 +512,9 @@ if [ "$SKIP_NPM_TOOLS" = false ] && command_exists "npm"; then
   else
     echo "ℹ️ npm PATH 配置已存在，无需重复添加"
   fi
-  bash -i -c "source \"$HOME/.bashrc\" >/dev/null 2>&1; echo '✅ 已加载 .bashrc';"
-  source "$HOME/.bashrc"
+  eval "$PATH_CONFIG"
+  echo "✅ 当前会话已通过 eval 立即生效 npm 全局 PATH"
+
   # 额外的 npm 配置
   sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
   echo 'always-auth=true' >> ~/.npmrc
@@ -524,11 +544,15 @@ if [ "$SKIP_NPM_REGISTRY" = false ] && command_exists "yrm"; then
   fi
 
   # 切换到 codeup 镜像
-  if yrm use codeup; then
-    echo "✅ yrm 切换到 Codeup 镜像：$(yrm current)"
+  if yrm current | grep -q "codeup"; then
+    echo "✅ 已使用 Codeup 镜像源"
   else
-    echo "❌ yrm 配置失败！是否跳过？"
-    confirm_continue "继续执行其他步骤"
+    if yrm use codeup; then
+      echo "✅ yrm 切换到 Codeup 镜像：$(yrm current)"
+    else
+      echo "❌ yrm 配置失败！是否跳过？"
+      confirm_continue "继续执行其他步骤"
+    fi
   fi
 elif [ "$SKIP_NPM_REGISTRY" = true ]; then
   echo -e "\n⚠️  已跳过 npm registry 镜像配置"
