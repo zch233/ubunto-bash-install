@@ -440,6 +440,7 @@ EOF
     fi
   fi
   echo "✅ fnm 配置完成"
+  source "$HOME/.bashrc"
 else
   echo -e "\n⚠️  已跳过 fnm 安装"
 fi
