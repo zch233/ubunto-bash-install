@@ -216,7 +216,7 @@ if [ "$SKIP_PROXY" = false ]; then
   fi
 
   # 2. 获取 Clash 端口（默认 7890）
-  read -r -p "请输入 Windows Clash or Proxy 的 Socks5/Http 端口（默认 7890，输入 0 代表没有代理，直接回车使用默认值）：" CLASH_PORT < /dev/tty
+  read -r -p "请输入 Windows Clash or Proxy 的 Socks5/Http 端口（输入 0 代表没有代理，默认 7890 直接回车使用默认值）：" CLASH_PORT < /dev/tty
   CLASH_PORT=${CLASH_PORT:-7890}
   if [ "$CLASH_PORT" = 0 ]; then
     echo -e "\n🤢 太拉垮了，连个代理都没有"
