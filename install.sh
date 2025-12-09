@@ -52,12 +52,35 @@ command_exists() {
 # 验证工具安装
 verify_tool() {
   local tool=$1
-  if command_exists "$tool"; then
-    local version=$("$tool" --version 2>&1 | head -n 1 | cut -d ' ' -f 2 | cut -d ',' -f 1)
-    echo "  ✅ $tool：$version"
-  else
+  # 先判断工具是否存在
+  if ! command_exists "$tool"; then
     echo "  ❌ $tool：未安装成功"
+    return
   fi
+
+  # 定义常见的版本查询参数（按优先级排序，覆盖绝大多数工具）
+  local version_params=("--version" "-v" "version" "--info" "-V")
+  local version="unknown"  # 默认版本为 unknown
+
+  # 循环尝试不同的版本查询参数
+  for param in "${version_params[@]}"; do
+    # 执行版本查询，捕获输出（忽略 stderr 避免报错刷屏）
+    # 用 head -n 1 取第一行，避免多行文输出干扰
+    local version_output=$("$tool" "$param" 2>/dev/null | head -n 1)
+
+    # 判断命令是否执行成功（$? 为 0 表示参数有效）
+    if [ $? -eq 0 ] && [ -n "$version_output" ]; then
+      # 提取版本号：兼容多种格式（如 "tool v1.2.3"、"1.2.3, build xxx"、"Version 1.2.3"）
+      # 正则匹配连续的数字+点号（核心版本号），忽略前缀后缀无关字符
+      version=$(echo "$version_output" | grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1)
+      # 若未提取到数字版本（如部分工具输出 "latest"），直接用原始输出的前30个字符
+      [ -z "$version" ] && version=$(echo "$version_output" | cut -c 1-30)
+      break  # 找到有效版本，退出循环
+    fi
+  done
+
+  # 输出结果
+  echo "  ✅ $tool：$version"
 }
 
 # 提示用户确认（可选继续）
@@ -106,6 +129,7 @@ safe_login() {
     yarn)
       # 同步失败则触发交互式登录
       echo -e "\n📢 【Yarn 登录】复用 NPM 认证信息，可能需手动输入账号信息："
+      echo -e "📢 【Yarn 登录】账号信息获取地址：\033[4;94mhttps://packages.aliyun.com/npm/npm-registry/guide\033[0m \n"
       yarn login < /dev/tty > /dev/tty 2>&1
       local exit_code=$?
       # 验证 token
@@ -488,55 +512,52 @@ if [ "$SKIP_NPM_LOGIN" = false ] && command_exists "npm"; then
   echo -e "\n🔐 开始 npm 登录（Codeup 账号）..."
 
   # 检测文件是否存在
-  set +e
   if [ -f "$HOME/.npmrc" ]; then
     # 检测是否已登录
-    grep -qE "$(echo "$CODEUP_REGISTRY" | sed -e 's/^.*\/\///' | sed -e 's/\//\\\//g'):_authToken=.+" "$HOME/.npmrc"
+
+    if grep -qE "^//$(echo "$CODEUP_REGISTRY" | sed -e 's#^[a-zA-Z0-9]\+://##' -e 's#/npm-registry/.*$##' -e 's#\.#\\.#g' -e 's#/#\\/#g')/:_authToken=.+" "$HOME/.npmrc"; then
+        echo "✅ npm 已配置 Codeup 镜像认证（无需重复登录）"
+      else
+        # 调用安全登录函数
+        if safe_login "npm" "$CODEUP_REGISTRY"; then
+          echo "✅ npm 登录成功"
+          # 修复 npm config 权限提示
+          sudo chown -R "$USER:$(id -gn "$USER")" "$HOME/.config" 2>/dev/null || true
+          # npm 全局安装权限不足，修改 npm 全局目录
+          BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
+          cp "$HOME/.bashrc" "$BACKUP_FILE"
+          echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
+          if [ -f "$HOME/.npm-global" ]; then
+            rm -f "$HOME/.npm-global"
+            echo "⚠️ 已清理错误创建的 .npm-global 文件"
+          fi
+          mkdir -p "$HOME/.npm-global"
+          npm config set prefix "$HOME/.npm-global"
+          echo "✅ 已设置 npm 全局目录为：$HOME/.npm-global"
+          # 加载刚写入的 .bashrc 配置，让 proxy-test/proxy-on/proxy-off 函数生效
+          PATH_CONFIG="export PATH=\"$HOME/.npm-global/bin:\$PATH\""
+          # 先检查是否已存在，避免重复添加
+          if ! grep -qxF "$PATH_CONFIG" "$HOME/.bashrc"; then
+            echo "$PATH_CONFIG" >> "$HOME/.bashrc"
+            echo "✅ 已将 npm PATH 配置添加到 .bashrc"
+          else
+            echo "ℹ️ npm PATH 配置已存在，无需重复添加"
+          fi
+          bash -i -c "source \"$HOME/.bashrc\" >/dev/null 2>&1; echo '✅ 已加载 .bashrc';"
+
+          # 额外的 npm 配置
+          sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
+          echo 'always-auth=true' >> ~/.npmrc
+          echo 'save-prefix=""' >> ~/.npmrc
+        else
+          echo "❌ npm 登录失败"
+          confirm_continue "继续执行其他步骤"
+        fi
+      fi
   else
     # 文件不存在时，强制返回未匹配（退出码 1）
     echo ".npmrc 文件不存在"
   fi
-
-  if [ $? -eq 0 ]; then
-    echo "✅ npm 已配置 Codeup 镜像认证（无需重复登录）"
-  else
-    # 调用安全登录函数
-    if safe_login "npm" "$CODEUP_REGISTRY"; then
-      echo "✅ npm 登录成功"
-      # 修复 npm config 权限提示
-      sudo chown -R "$USER:$(id -gn "$USER")" "$HOME/.config" 2>/dev/null || true
-      # npm 全局安装权限不足，修改 npm 全局目录
-      BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
-      cp "$HOME/.bashrc" "$BACKUP_FILE"
-      echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
-      if [ -f "$HOME/.npm-global" ]; then
-        rm -f "$HOME/.npm-global"
-        echo "⚠️ 已清理错误创建的 .npm-global 文件"
-      fi
-      mkdir -p "$HOME/.npm-global"
-      npm config set prefix "$HOME/.npm-global"
-      echo "✅ 已设置 npm 全局目录为：$HOME/.npm-global"
-      # 加载刚写入的 .bashrc 配置，让 proxy-test/proxy-on/proxy-off 函数生效
-      PATH_CONFIG="export PATH=\"$HOME/.npm-global/bin:\$PATH\""
-      # 先检查是否已存在，避免重复添加
-      if ! grep -qxF "$PATH_CONFIG" "$HOME/.bashrc"; then
-        echo "$PATH_CONFIG" >> "$HOME/.bashrc"
-        echo "✅ 已将 npm PATH 配置添加到 .bashrc"
-      else
-        echo "ℹ️ npm PATH 配置已存在，无需重复添加"
-      fi
-      bash -i -c "source \"$HOME/.bashrc\" >/dev/null 2>&1; echo '✅ 已加载 .bashrc';"
-
-      # 额外的 npm 配置
-      sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
-      echo 'always-auth=true' >> ~/.npmrc
-      echo 'save-prefix=""' >> ~/.npmrc
-    else
-      echo "❌ npm 登录失败"
-      confirm_continue "继续执行其他步骤"
-    fi
-  fi
-  set -e
 elif [ "$SKIP_NPM_LOGIN" = true ]; then
   echo -e "\n⚠️  已跳过 npm 登录"
 else
@@ -546,18 +567,8 @@ fi
 # 7. yarn 登录（--skipYarnLogin 跳过）
 if [ "$SKIP_YARN_LOGIN" = false ] && command_exists "yarn"; then
   echo -e "\n🔐 开始 yarn 登录（与 npm 账号一致）..."
-  set +e
   if [ -f "$HOME/.yarnrc" ]; then
-    # 检测是否已登录
-    grep -qE "$(echo "$CODEUP_REGISTRY" | sed -e 's/^.*\/\///' | sed -e 's/\//\\\//g'):_authToken\" \".+\"" "$HOME/.yarnrc"
-  else
-    # 文件不存在时，强制返回未匹配（退出码 1）
-    echo ".yarnrc 文件不存在"
-  fi
-
-  if [ $? -eq 0 ]; then
-    echo "✅ yarn 已配置 Codeup 镜像认证（无需重复登录）"
-  else
+    # yarn 无法检测是否已登录，但是可以在登录一次
     # 调用安全登录函数
     if safe_login "yarn" "$CODEUP_REGISTRY"; then
       echo "✅ yarn 登录成功（复用 NPM 认证/手动登录）"
@@ -565,8 +576,10 @@ if [ "$SKIP_YARN_LOGIN" = false ] && command_exists "yarn"; then
       echo "❌ yarn 登录失败"
       confirm_continue "是否跳过 yarn 登录继续执行其他步骤？"
     fi
+  else
+    # 文件不存在时，强制返回未匹配（退出码 1）
+    echo ".yarnrc 文件不存在"
   fi
-  set -e
 elif [ "$SKIP_YARN_LOGIN" = true ]; then
   echo -e "\n⚠️  已跳过 yarn 登录"
 else
@@ -745,6 +758,6 @@ echo "  - 镜像源：$(yrm current 2>/dev/null || echo "未配置")（$CODEUP_R
 echo "  - npm/yarn 已登录 Codeup 镜像"
 echo "  - Git 用户名：$(git config --global --get user.name 2>/dev/null || echo "未配置")，邮箱：$(git config --global --get user.email 2>/dev/null || echo "未配置")"
 echo "  - SSH 公钥：已在上文输出，可随时通过 'cat $ACTIVE_SSH_KEY' 查看"
-echo "  - WSL 代理配置：${PROXY_SOCKS5:-未配置}（Clash 需保持启动并开启局域网连接）"
+echo "  - WSL 代理配置：已配置（Clash 需保持启动并开启局域网连接）"
 echo "  - 所有别名、函数、配置已生效，可直接使用"
 echo "========================================================================"
