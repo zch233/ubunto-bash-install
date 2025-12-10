@@ -378,6 +378,18 @@ port-show() {
   powershell.exe -Command 'Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command ""netsh interface portproxy show all; Read-Host '查看完成，按Enter关闭窗口'"""'
 }
 # ------------------------ 自定义别名配置结束 ------------------------
+
+# ------------------------ Git 分支显示配置 ------------------------
+# 检测当前 Git 分支的函数
+parse_git_branch() {
+  # 2>/dev/null 忽略非 Git 仓库的错误提示
+  git branch 2>/dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/ (\1)/'
+}
+
+# 配置终端提示符（PS1）：绿色用户名@主机名 + 蓝色目录 + 红色分支名 + $ 符号
+# 颜色代码说明：\033[01;32m=绿色（加粗），\033[01;34m=蓝色（加粗），\033[01;31m=红色（加粗），\033[00m=恢复默认颜色
+PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[01;31m\]$(parse_git_branch)\[\033[00m\]\$ '
+# ------------------------ Git 分支显示配置结束 ------------------------
 EOF
     cat "$BACKUP_FILE" >> "$HOME/.bashrc"
     echo "✅ 已更新 .bashrc 别名配置"
