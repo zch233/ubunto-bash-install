@@ -206,7 +206,7 @@ echo "========================================================================"
 if [ "$SKIP_PROXY" = false ]; then
   echo -e "\n🌐 开始 WSL 代理配置..."
   # 获取 Windows IP（host.docker.internal）
-  WINDOWS_IP=$(ping -c 1 host.docker.internal | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+  WINDOWS_IP=$(ping -c 1 -W 2 host.docker.internal 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
   if [ -z "$WINDOWS_IP" ] || ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
     read -r -p "请输入 Windows 局域网 IP（例如：192.168.1.100）：" WINDOWS_IP < /dev/tty
     while ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; do
