@@ -206,9 +206,10 @@ echo "========================================================================"
 if [ "$SKIP_PROXY" = false ]; then
   echo -e "\n🌐 开始 WSL 代理配置..."
   # 获取 Windows IP（host.docker.internal）
-  WINDOWS_IP=$(ping -c 1 -W 2 host.docker.internal 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
-  if [ -z "$WINDOWS_IP" ] || ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
-    read -r -p "请输入 Windows 局域网 IP（例如：192.168.1.100）：" WINDOWS_IP < /dev/tty
+    WINDOWS_IP=$(ping -c 1 -W 2 -w 3 host.docker.internal 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || true)
+  if [ -z "$WINDOWS_IP" ] || ! echo "$WINDOWS_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo -e "\n🌐 请输入 Windows 局域网 IP，如果你不知道的话，可以在 windows 终端输入 ipconfig 查看"
+    read -r -p "例如：192.168.x.x 或者 10.x.x.x：" WINDOWS_IP < /dev/tty
     while ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; do
       echo "❌ IP 格式不合法（必须是 x.x.x.x 四段）！"
       read -r -p "请重新输入 Windows 局域网 IP：" WINDOWS_IP < /dev/tty
@@ -216,7 +217,8 @@ if [ "$SKIP_PROXY" = false ]; then
   fi
 
   # 2. 获取 Clash 端口（默认 7890）
-  read -r -p "请输入 Windows Clash or Proxy 的 Socks5/Http 端口（输入 0 代表没有代理，默认 7890 直接回车使用默认值）：" CLASH_PORT < /dev/tty
+  echo -e "\n🌐 请输入 Windows Clash or Proxy 的 Socks5/Http 端口"
+  read -r -p "输入 0 代表没有代理，默认 7890 直接回车使用默认值：" CLASH_PORT < /dev/tty
   CLASH_PORT=${CLASH_PORT:-7890}
   if [ "$CLASH_PORT" = 0 ]; then
     echo -e "\n🤢 太拉垮了，连个代理都没有"
