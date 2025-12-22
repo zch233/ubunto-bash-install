@@ -209,6 +209,7 @@ if [ "$SKIP_PROXY" = false ]; then
   WINDOWS_IP=$(ping -c 1 -W 2 -w 3 host.docker.internal 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || true)
   if [ -z "$WINDOWS_IP" ] || ! echo "$WINDOWS_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
     echo -e "\n🌐 请输入 Windows 局域网 IP，如果你不知道的话，可以在 windows 终端输入 ipconfig 查看"
+    echo -e "\n🌐 哦对，还有记得打开「允许局域网链接」这个选项"
     read -r -p "例如：192.168.x.x 或者 10.x.x.x：" WINDOWS_IP < /dev/tty
     while ! echo "$WINDOWS_IP" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; do
       echo "❌ IP 格式不合法（必须是 x.x.x.x 四段）！"
@@ -433,12 +434,20 @@ if [ "$SKIP_FNM" = false ]; then
     chmod -R 755 "$FNM_INSTALL_DIR"
     echo "✅ 已修复 fnm 安装目录权限：$FNM_INSTALL_DIR"
     # 安装 fnm（镜像优先）
+    INSTALL_SUCCESS=false
     if curl -fvSL "$FNM_INSTALL_URL_OFFICIAL" | bash; then
       echo "✅ fnm 官方地址安装成功"
+      INSTALL_SUCCESS=true
     elif curl -fvSL "$FNM_INSTALL_URL_MIRROR" | bash; then
       echo "✅ fnm 镜像地址安装成功"
-
-      # 配置环境变量（避免重复配置）
+      INSTALL_SUCCESS=true
+    else
+      echo "❌ fnm 安装失败！是否跳过？"
+      confirm_continue "继续执行其他步骤"
+    fi
+  fi
+  # 无论官方还是镜像安装成功，都配置环境变量（避免重复配置）
+  if [ "$INSTALL_SUCCESS" = true ]; then
       if ! grep -q '# -------------------------- fnm 自动适配 --------------------------' "$HOME/.bashrc"; then
         cat << EOF >> "$HOME/.bashrc"
 
@@ -450,10 +459,6 @@ EOF
       else
         echo "✅ fnm 环境变量已存在，无需重复配置"
       fi
-    else
-      echo "❌ fnm 安装失败！是否跳过？"
-      confirm_continue "继续执行其他步骤"
-    fi
   fi
   echo "✅ fnm 配置完成"
   source "$HOME/.bashrc"
