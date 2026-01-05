@@ -28,19 +28,93 @@ SKIP_GIT_CONFIG=false
 SKIP_SSH_KEY=false
 SKIP_PROXY=false
 
+# ======================== 集中配置定义 ========================
 # 别名清单
-declare -A ALIAS_MAP=(
-  ["gp"]="git push - 推送代码到远程仓库"
-  ["gll"]="git pull - 拉取远程仓库代码到本地"
-  ["gl"]="git clone - 克隆远程仓库到本地"
-  ["gc"]="git checkout - 切换分支或恢复工作区文件"
-  ["glog"]="git log simplify - 美化显示提交日志（含分支图、作者、时间）"
-  ["gk"]="git cherry-pick - 选择性合并指定提交记录"
-  ["ys"]="yarn dev | yarn serve - 启动 yarn 开发/预览服务（根据项目配置生效）"
-  ["code"]="cursor - 用 Cursor 编辑器打开当前目录"
-  ["gg"]="gupo-deploy -a -p - 执行 gupo-deploy 部署命令（全量部署 + 保持参数）"
+ALIAS_CONFIG=$(cat << 'ALIAS_CONFIG_EOF'
+gp:git push - 推送代码到远程仓库
+gll:git pull - 拉取远程仓库代码到本地
+gl:git clone - 克隆远程仓库到本地
+gc:git checkout - 切换分支或恢复工作区文件
+glog:git log simplify - 美化显示提交日志（含分支图、作者、时间）
+gk:git cherry-pick - 选择性合并指定提交记录
+ys:yarn dev | yarn serve - 启动 yarn 开发/预览服务（根据项目配置生效）
+code:cursor - 用 Cursor 编辑器打开当前目录
+gg:gupo-deploy -a -p - 执行 gupo-deploy 部署命令（全量部署 + 保持参数）
+ALIAS_CONFIG_EOF
 )
-# ================================================================================
+
+# TOOLS_CONFIG 和 COMMANDS_CONFIG 也按同样方式修改
+TOOLS_CONFIG=$(cat << 'TOOLS_CONFIG_EOF'
+git
+node
+npm
+pnpm
+yarn
+yrm
+tsc
+git-open
+fnm
+TOOLS_CONFIG_EOF
+)
+
+COMMANDS_CONFIG=$(cat << 'COMMANDS_CONFIG_EOF'
+端口转发：port-add <端口> | port-del <端口> | port-reset | port-show
+代理控制：proxy-on | proxy-off | proxy-test
+fnm 命令：fnm install <版本> | fnm use <版本>
+镜像切换：yrm ls | yrm use <镜像名>
+COMMANDS_CONFIG_EOF
+)
+
+# ======================== 解析配置的函数（脚本和 install_info 共用）========================
+# 解析别名配置为数组
+parse_alias_config() {
+  declare -A alias_map
+  while IFS=':' read -r key value; do
+    [[ -z "$key" || "$key" =~ ^# ]] && continue  # 跳过空行和注释
+    alias_map["$key"]="$value"
+  done <<< "$ALIAS_CONFIG"
+
+  # 返回关联数组（通过全局变量或eval）
+  if [[ "$1" == "--eval" ]]; then
+    # 返回可eval的字符串
+    declare -p alias_map
+  else
+    # 直接使用（需要调用者声明关联数组）
+    for key in "${!alias_map[@]}"; do
+      echo "  - $key：${alias_map[$key]}"
+    done
+  fi
+}
+
+# 解析工具配置为数组
+parse_tools_config() {
+  local tools=()
+  while IFS= read -r tool; do
+    [[ -z "$tool" || "$tool" =~ ^# ]] && continue
+    tools+=("$tool")
+  done <<< "$TOOLS_CONFIG"
+
+  if [[ "$1" == "--eval" ]]; then
+    declare -p tools
+  else
+    printf '%s\n' "${tools[@]}"
+  fi
+}
+
+# 解析命令配置为数组
+parse_commands_config() {
+  local commands=()
+  while IFS= read -r cmd; do
+    [[ -z "$cmd" || "$cmd" =~ ^# ]] && continue
+    commands+=("$cmd")
+  done <<< "$COMMANDS_CONFIG"
+
+  if [[ "$1" == "--eval" ]]; then
+    declare -p commands
+  else
+    printf '%s\n' "${commands[@]}"
+  fi
+}
 
 # ======================== 工具函数（简化重复逻辑）========================
 # 检测命令是否存在
@@ -49,7 +123,7 @@ command_exists() {
   return $?
 }
 
-# 验证工具安装
+# 验证工具安装（通用版，供脚本和 install_info 命令使用）
 verify_tool() {
   local tool=$1
   # 先判断工具是否存在
@@ -163,6 +237,49 @@ get_node_setup_url() {
     echo "$NODE_LTS_SETUP_URL"
   fi
 }
+
+# 获取 SSH 公钥信息
+get_ssh_key_info() {
+  if [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
+    echo "ed25519 类型（~/.ssh/id_ed25519.pub）"
+  elif [ -f "$HOME/.ssh/id_rsa.pub" ]; then
+    echo "rsa 类型（~/.ssh/id_rsa.pub）"
+  else
+    echo "未生成"
+  fi
+}
+
+# 显示安装信息的核心函数（使用集中配置）
+show_install_info() {
+  echo -e "\n========================================================================"
+  echo "📋 工具安装验证结果："
+
+  # 遍历工具清单验证
+  while IFS= read -r tool; do
+    [[ -z "$tool" ]] && continue
+    verify_tool "$tool"
+  done <<< "$TOOLS_CONFIG"
+
+  echo -e "\n📋 自定义别名清单："
+  parse_alias_config
+
+  echo -e "\n⚙️ 常用命令说明："
+  while IFS= read -r cmd; do
+    [[ -z "$cmd" ]] && continue
+    echo "  - $cmd"
+  done <<< "$COMMANDS_CONFIG"
+
+  echo -e "\n🎉 所有操作完成！重启终端或执行 'source ~/.bashrc' 即可使用所有配置～"
+  echo "📌 关键信息汇总："
+  echo "  - 镜像源：$(yrm current 2>/dev/null || echo "未配置")（$(yrm ls | grep -E "^[[:space:]]*(\* |)$(yrm current 2>/dev/null || echo "codeup")" | sed -E "s/^[[:space:]]*(\* |)?$(yrm current 2>/dev/null || echo "codeup")[[:space:]]*-+[[:space:]]*//" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')）"
+  echo "  - npm/yarn 已登录 Codeup 镜像"
+  echo "  - Git 用户名：$(git config --global --get user.name 2>/dev/null || echo "未配置")，邮箱：$(git config --global --get user.email 2>/dev/null || echo "未配置")"
+  echo "  - SSH 公钥：$(get_ssh_key_info)"
+  echo "  - WSL 代理配置：已配置（Clash 需保持启动并开启局域网连接）"
+  echo "  - 所有别名、函数、配置已生效，可直接使用"
+  echo "========================================================================"
+}
+
 # ================================================================================
 
 # ======================== 参数解析（处理跳过选项）========================
@@ -394,7 +511,6 @@ parse_git_branch() {
 PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[01;31m\]$(parse_git_branch)\[\033[00m\]\$ '
 # ------------------------ Git 分支显示配置结束 ------------------------
 EOF
-    cat "$BACKUP_FILE" >> "$HOME/.bashrc"
     echo "✅ 已更新 .bashrc 别名配置"
   else
     echo "✅ .bashrc 别名配置已存在，无需重复配置"
@@ -767,36 +883,100 @@ else
   echo -e "\n⚠️  已跳过 SSH 密钥配置"
 fi
 
+# 11. 添加 install_info 命令到 .bashrc
+if ! grep -q "# -------------------------- 安装信息查看命令 --------------------------" "$HOME/.bashrc"; then
+  echo -e "\n🔧 添加 install_info 命令到 .bashrc..."
+  BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
+    cp "$HOME/.bashrc" "$BACKUP_FILE"
+    echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
+    cat << INSTALL_INFO_FUNCTION_EOF >> "$HOME/.bashrc"
+# -------------------------- 安装信息查看命令 --------------------------
+install_info() {
+  # 复用脚本中的验证函数
+  verify_tool_for_install_info() {
+    local tool=\$1
+    if ! command -v "\$tool" &> /dev/null; then
+      echo "  ❌ \$tool：未安装"
+      return 0
+    fi
+
+    local version_params=("--version" "-v" "version" "--info" "-V")
+    local version_output=""
+    local final_version="unknown"
+
+    for param in "\${version_params[@]}"; do
+      version_output=\$("\$tool" "\$param" 2>/dev/null | head -n 1 || true)
+      if [ -n "\$version_output" ]; then
+        final_version=\$(echo "\$version_output" | grep -Eo '[0-9]+\\.[0-9]+(\\.[0-9]+)?' | head -n 1 || true)
+        [ -z "\$final_version" ] && final_version="unknown"
+        break
+      fi
+    done
+
+    echo "  ✅ \$tool：\$final_version"
+    return 0
+  }
+
+  # ======================== 集中配置定义（与脚本一致）========================
+  local ALIAS_CONFIG=\$'$ALIAS_CONFIG'
+
+  local TOOLS_CONFIG=\$'$TOOLS_CONFIG'
+
+  local COMMANDS_CONFIG=\$'$COMMANDS_CONFIG'
+
+  # 解析别名配置
+  parse_alias_for_install_info() {
+    while IFS=':' read -r key value; do
+      [[ -z "\$key" || "\$key" =~ ^# ]] && continue
+      echo "  - \$key：\$value"
+    done <<< "\$ALIAS_CONFIG"
+  }
+
+  # 解析命令配置
+  parse_commands_for_install_info() {
+    while IFS= read -r cmd; do
+      [[ -z "\$cmd" || "\$cmd" =~ ^# ]] && continue
+      echo "  - \$cmd"
+    done <<< "\$COMMANDS_CONFIG"
+  }
+
+  echo -e "\n========================================================================"
+  echo "📋 工具安装验证结果："
+
+  # 遍历工具清单验证
+  while IFS= read -r tool; do
+    [[ -z "\$tool" ]] && continue
+    verify_tool_for_install_info "\$tool"
+  done <<< "\$TOOLS_CONFIG"
+
+  echo -e "\n📋 自定义别名清单："
+  parse_alias_for_install_info
+
+  echo -e "\n⚙️ 常用命令说明："
+  parse_commands_for_install_info
+
+  echo -e "\n🎉 所有配置已生效！"
+  echo "📌 关键信息汇总："
+  echo "  - 镜像源：\$(yrm current 2>/dev/null || echo "未配置")（\$(yrm ls | grep -E "^[[:space:]]*(\* |)\$(yrm current 2>/dev/null || echo "codeup")" | sed -E "s/^[[:space:]]*(\* |)?\$(yrm current 2>/dev/null || echo "codeup")[[:space:]]*-+[[:space:]]*//" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')）"
+  echo "  - npm/yarn 登录状态：已配置 Codeup 镜像认证"
+  echo "  - Git 用户名：\$(git config --global --get user.name 2>/dev/null || echo "未配置")，邮箱：\$(git config --global --get user.email 2>/dev/null || echo "未配置")"
+  echo "  - SSH 公钥：\$(if [ -f ~/.ssh/id_ed25519.pub ]; then echo "ed25519 类型（~/.ssh/id_ed25519.pub）"; elif [ -f ~/.ssh/id_rsa.pub ]; then echo "rsa 类型（~/.ssh/id_rsa.pub）"; else echo "未生成"; fi)"
+  echo "  - WSL 代理配置：已配置（Clash 需保持启动并开启局域网连接）"
+  echo "  - 所有别名、函数、配置已生效，可直接使用"
+  echo "========================================================================"
+}
+# ------------------------ 安装信息查看命令结束 ------------------------
+INSTALL_INFO_FUNCTION_EOF
+  echo "✅ install_info 命令已添加到 .bashrc"
+else
+  echo "✅ install_info 命令已存在，无需重复添加"
+fi
+
 # ======================== 收尾验证（汇总结果）========================
-echo -e "\n========================================================================"
-echo "📋 工具安装验证结果："
-verify_tool "git"
-verify_tool "node"
-verify_tool "npm"
-verify_tool "pnpm"
-verify_tool "yarn"
-verify_tool "yrm"
-verify_tool "tsc"
-verify_tool "git-open"
-verify_tool "fnm"
+# 调用统一的 show_install_info 函数显示安装信息
+show_install_info
 
-echo -e "\n📋 自定义别名清单："
-for alias_key in "${!ALIAS_MAP[@]}"; do
-  echo "  - $alias_key：${ALIAS_MAP[$alias_key]}"
-done
-
-echo -e "\n⚙️ 常用命令说明："
-echo "  - 端口转发：port-add <端口> | port-del <端口> | port-reset | port-show"
-echo "  - 代理控制：proxy-on | proxy-off | proxy-test"
-echo "  - fnm 命令：fnm install <版本> | fnm use <版本>"
-echo "  - 镜像切换：yrm use <镜像名>"
-
-echo -e "\n🎉 所有操作完成！重启终端或执行 'source ~/.bashrc' 即可使用所有配置～"
-echo "📌 关键信息汇总："
-echo "  - 镜像源：$(yrm current 2>/dev/null || echo "未配置")（$CODEUP_REGISTRY）"
-echo "  - npm/yarn 已登录 Codeup 镜像"
-echo "  - Git 用户名：$(git config --global --get user.name 2>/dev/null || echo "未配置")，邮箱：$(git config --global --get user.email 2>/dev/null || echo "未配置")"
-echo "  - SSH 公钥：已在上文输出，可随时通过 'cat $ACTIVE_SSH_KEY' 查看"
-echo "  - WSL 代理配置：已配置（Clash 需保持启动并开启局域网连接）"
-echo "  - 所有别名、函数、配置已生效，可直接使用"
+# 输出最后提示
+echo -e "\n💡 提示：你可以随时使用 'install_info' 命令查看安装状态和配置信息"
+echo "🔧 重启终端或执行 'source ~/.bashrc' 即可使用所有配置～"
 echo "========================================================================"
