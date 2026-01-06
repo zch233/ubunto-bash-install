@@ -458,7 +458,7 @@ EOF
   fi
 
   # 替换 apt 源为阿里云源
-  if ! grep -q "archive.ubuntu.com" /etc/apt/sources.list; then
+  if grep -q "archive.ubuntu.com" /etc/apt/sources.list; then
     echo "=== 正在备份原有软件源..."
     BACKUP_FILE="/etc/apt/sources.list.bak.$(date +%Y%m%d%H%M%S)"
     sudo cp /etc/apt/sources.list "$BACKUP_FILE"
@@ -700,19 +700,17 @@ if [ "$SKIP_NPM_TOOLS" = false ] && command_exists "npm"; then
   # 修复 npm config 权限提示
   sudo chown -R "$USER:$(id -gn "$USER")" "$HOME/.config" 2>/dev/null || true
   # npm 全局安装权限不足，修改 npm 全局目录
-  BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
-  cp "$HOME/.bashrc" "$BACKUP_FILE"
-  echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
-  if [ -d "$HOME/.npm-global" ]; then
-    echo "ℹ️ 已创建 .npm-global 文件"
-  else
-    mkdir -p "$HOME/.npm-global"
-    npm config set prefix "$HOME/.npm-global"
-    echo "✅ 已设置 npm 全局目录为：$HOME/.npm-global"
-  fi
+  mkdir -p "$HOME/.npm-global"
+  npm config set prefix "$HOME/.npm-global"
+  echo "✅ 已设置 npm 全局目录为：$HOME/.npm-global"
 
   # 加载刚写入的 .bashrc 配置，让 proxy-test/proxy-on/proxy-off 函数生效
   PATH_CONFIG="export PATH=\"$HOME/.npm-global/bin:\$PATH\""
+
+  # 备份 .bashrc
+  BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$HOME/.bashrc" "$BACKUP_FILE"
+  echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
   # 先检查是否已存在，避免重复添加
   if ! grep -qxF "$PATH_CONFIG" "$HOME/.bashrc"; then
     echo "$PATH_CONFIG" >> "$HOME/.bashrc"
