@@ -85,13 +85,24 @@ generate_summary() {
   local git_email=$(git config --global --get user.email 2>/dev/null || echo "未配置")
   local ssh_key_info=$(get_ssh_key_info)
 
-  # 替换模板占位符（使用 | 作为分隔符，避免 URL 中的 / 字符问题）
+  # 转义函数：转义 sed 特殊字符（| & \ /）
+  escape_sed_delimiter() {
+    local str="$1"
+    # 先转义反斜杠，再转义其他字符
+    str="${str//\\/\\\\}"
+    str="${str//|/\\|}"
+    str="${str//&/\\&}"
+    str="${str////\\/}"
+    echo "$str"
+  }
+
+  # 替换模板占位符（使用 | 作为分隔符，并对替换值进行转义）
   echo -e "$SUMMARY_TEMPLATE" | \
-    sed "s|{MIRROR_NAME}|${mirror_name}|g" | \
-    sed "s|{MIRROR_URL}|${mirror_url}|g" | \
-    sed "s|{GIT_USER}|${git_user}|g" | \
-    sed "s|{GIT_EMAIL}|${git_email}|g" | \
-    sed "s|{SSH_KEY_INFO}|${ssh_key_info}|g"
+    sed "s|{MIRROR_NAME}|$(escape_sed_delimiter "${mirror_name}")|g" | \
+    sed "s|{MIRROR_URL}|$(escape_sed_delimiter "${mirror_url}")|g" | \
+    sed "s|{GIT_USER}|$(escape_sed_delimiter "${git_user}")|g" | \
+    sed "s|{GIT_EMAIL}|$(escape_sed_delimiter "${git_email}")|g" | \
+    sed "s|{SSH_KEY_INFO}|$(escape_sed_delimiter "${ssh_key_info}")|g"
 }
 FUNC_EOF
 )
