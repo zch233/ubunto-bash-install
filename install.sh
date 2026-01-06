@@ -678,9 +678,18 @@ if [ "$SKIP_NPM_TOOLS" = false ] && command_exists "npm"; then
   echo "✅ 当前会话已通过 eval 立即生效 npm 全局 PATH"
 
   # 额外的 npm 配置
-  sed -i -e '/save-prefix=/d' -e '/always-auth=/d' ~/.npmrc &> /dev/null
-  echo 'always-auth=true' >> ~/.npmrc
-  echo 'save-prefix=""' >> ~/.npmrc
+  sed -i -e '/# -------------------------- 自定义配置 --------------------------/,/# ------------------------ 自定义配置结束 ------------------------/d' "$HOME/.npmrc" &> /dev/null
+  echo '
+# -------------------------- 自定义配置 --------------------------"
+always-auth=true
+save-prefix=""
+sass_binary_site="https://npmmirror.com/mirrors/node-sass/"
+phantomjs_cdnurl="https://cdn.npmmirror.com/binaries/phantomjs"
+electron_mirror="https://cdn.npmmirror.com/binaries/electron/"
+sqlite3_binary_host_mirror="https://foxgis.oss-cn-shanghai.aliyuncs.com/"
+chromedriver_cdnurl="https://cdn.npmmirror.com/binaries/chromedriver"
+# ------------------------ 自定义配置结束 ------------------------
+' >> "$HOME/.npmrc"
 
   if npm install -g pnpm yarn yrm typescript git-open; then
     echo "✅ 全局工具安装完成（pnpm/yarn/yrm/typescript/git-open）"
