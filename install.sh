@@ -456,6 +456,45 @@ EOF
     echo "✅ 代理配置完成（$PROXY_SOCKS5）"
     proxy-test
   fi
+
+  # 替换 apt 源为阿里云源
+  if ! grep -q "archive.ubuntu.com" /etc/apt/sources.list; then
+    echo "=== 正在备份原有软件源..."
+    BACKUP_FILE="/etc/apt/sources.list.bak.$(date +%Y%m%d%H%M%S)"
+    sudo cp /etc/apt/sources.list "$BACKUP_FILE"
+    echo "备份文件已保存至：$BACKUP_FILE"
+    echo "=== 正在识别系统版本..."
+    CODENAME=$(lsb_release -c | awk '{print $2}')
+    if [ -z "$CODENAME" ]; then
+      echo "❌ 无法识别系统版本！请先执行 'lsb_release -c' 查看版本代号，再手动替换源。"
+      exit 1
+    fi
+    echo "当前系统版本代号：$CODENAME"
+    echo "=== 正在写入阿里云源..."
+    cat << EOF | sudo tee /etc/apt/sources.list > /dev/null
+deb http://mirrors.aliyun.com/ubuntu/ $CODENAME main restricted universe multiverse
+deb-src http://mirrors.aliyun.com/ubuntu/ $CODENAME main restricted universe multiverse
+
+deb http://mirrors.aliyun.com/ubuntu/ $CODENAME-security main restricted universe multiverse
+deb-src http://mirrors.aliyun.com/ubuntu/ $CODENAME-security main restricted universe multiverse
+
+deb http://mirrors.aliyun.com/ubuntu/ $CODENAME-updates main restricted universe multiverse
+deb-src http://mirrors.aliyun.com/ubuntu/ $CODENAME-updates main restricted universe multiverse
+
+deb http://mirrors.aliyun.com/ubuntu/ $CODENAME-backports main restricted universe multiverse
+deb-src http://mirrors.aliyun.com/ubuntu/ $CODENAME-backports main restricted universe multiverse
+EOF
+   echo "=== 正在导入阿里云 GPG 密钥..."
+   apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 40976EAF437D05B5 2>/dev/null || {
+    echo "⚠️  密钥导入失败（部分系统已内置），继续更新缓存..."
+   }
+   echo "=== 正在更新 apt 缓存（耐心等待，速度会显著提升）..."
+   sudo apt update -y
+   echo -e "\n🎉 阿里云源替换完成！下载速度已提速～"
+  else
+    echo -e "\n⚠️  已跳过替换 apt 源为阿里云源"
+  fi
+
 else
   echo -e "\n⚠️  已跳过 WSL 代理配置"
 fi
