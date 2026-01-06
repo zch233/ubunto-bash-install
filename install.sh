@@ -300,6 +300,7 @@ show_install_info() {
     echo "  - $cmd"
   done <<< "$COMMANDS_CONFIG"
 
+  echo -e "\n🎉 所有操作完成！重启终端或执行 'source ~/.bashrc' 即可使用所有配置～"
   eval "$GENERATE_SUMMARY_FUNC"
   echo -e "\n$(generate_summary)"
 }
@@ -920,98 +921,98 @@ fi
 if ! grep -q "# -------------------------- 安装信息查看命令 --------------------------" "$HOME/.bashrc"; then
   echo -e "\n🔧 添加 install_info 命令到 .bashrc..."
   BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
-    cp "$HOME/.bashrc" "$BACKUP_FILE"
-    echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
+  cp "$HOME/.bashrc" "$BACKUP_FILE"
+  echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
 
-    # 使用 base64 编码所有配置变量（避免转义问题）
-    ESCAPED_GENERATE_FUNC=$(echo "$GENERATE_SUMMARY_FUNC" | base64)
-    ESCAPED_SUMMARY_TEMPLATE=$(echo "$SUMMARY_TEMPLATE" | base64)
-    ESCAPED_ALIAS_CONFIG=$(echo "$ALIAS_CONFIG" | base64)
-    ESCAPED_TOOLS_CONFIG=$(echo "$TOOLS_CONFIG" | base64)
-    ESCAPED_COMMANDS_CONFIG=$(echo "$COMMANDS_CONFIG" | base64)
-    ESCAPED_CODEUP_REGISTRY=$(printf '%q' "$CODEUP_REGISTRY")
+  # 使用 base64 编码所有配置变量（避免转义问题）
+  ESCAPED_GENERATE_FUNC=$(echo "$GENERATE_SUMMARY_FUNC" | base64)
+  ESCAPED_SUMMARY_TEMPLATE=$(echo "$SUMMARY_TEMPLATE" | base64)
+  ESCAPED_ALIAS_CONFIG=$(echo "$ALIAS_CONFIG" | base64)
+  ESCAPED_TOOLS_CONFIG=$(echo "$TOOLS_CONFIG" | base64)
+  ESCAPED_COMMANDS_CONFIG=$(echo "$COMMANDS_CONFIG" | base64)
+  ESCAPED_CODEUP_REGISTRY=$(printf '%q' "$CODEUP_REGISTRY")
 
-    cat << INSTALL_INFO_FUNCTION_EOF >> "$HOME/.bashrc"
+  cat << INSTALL_INFO_FUNCTION_EOF  >> "$HOME/.bashrc"
 # -------------------------- 安装信息查看命令 --------------------------
 install_info() {
   # 复用脚本中的验证函数
-    verify_tool_for_install_info() {
-      local tool=\$1
-      if ! command -v "\$tool" &> /dev/null; then
-        echo "  ❌ \$tool：未安装"
-        return 0
-      fi
-
-      local version_params=("--version" "-v" "version" "--info" "-V")
-      local version_output=""
-      local final_version="unknown"
-
-      for param in "\${version_params[@]}"; do
-        version_output=\$("\$tool" "\$param" 2>/dev/null | head -n 1 || true)
-        if [ -n "\$version_output" ]; then
-          final_version=\$(echo "\$version_output" | grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1 || true)
-          [ -z "\$final_version" ] && final_version="unknown"
-          break
-        fi
-      done
-
-      echo "  ✅ \$tool：\$final_version"
+  verify_tool_for_install_info() {
+    local tool=\$1
+    if ! command -v "\$tool" &> /dev/null; then
+      echo "  ❌ \$tool：未安装"
       return 0
-    }
-    # SSH 信息函数
-    get_ssh_key_info() {
-      if [ -f \$HOME/.ssh/id_ed25519.pub ]; then
-        echo "ed25519类型（\$HOME/.ssh/id_ed25519.pub）"
-      elif [ -f \$HOME/.ssh/id_rsa.pub ]; then
-        echo "rsa类型（\$HOME/.ssh/id_rsa.pub）"
-      else
-        echo "未生成"
+    fi
+
+    local version_params=("--version" "-v" "version" "--info" "-V")
+    local version_output=""
+    local final_version="unknown"
+
+    for param in "\${version_params[@]}"; do
+      version_output=\$("\$tool" "\$param" 2>/dev/null | head -n 1 || true)
+      if [ -n "\$version_output" ]; then
+        final_version=\$(echo "\$version_output" | grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1 || true)
+        [ -z "\$final_version" ] && final_version="unknown"
+        break
       fi
-    }
+    done
 
-    # ======================== 集中配置定义（与脚本一致）========================
-    local CODEUP_REGISTRY="${ESCAPED_CODEUP_REGISTRY}"
-    local ALIAS_CONFIG=\$(echo '${ESCAPED_ALIAS_CONFIG}' | base64 -d)
-    local TOOLS_CONFIG=\$(echo '${ESCAPED_TOOLS_CONFIG}' | base64 -d)
-    local COMMANDS_CONFIG=\$(echo '${ESCAPED_COMMANDS_CONFIG}' | base64 -d)
-    local SUMMARY_TEMPLATE=\$(echo '${ESCAPED_SUMMARY_TEMPLATE}' | base64 -d)
+    echo "  ✅ \$tool：\$final_version"
+    return 0
+  }
+  # SSH 信息函数
+  get_ssh_key_info() {
+    if [ -f \$HOME/.ssh/id_ed25519.pub ]; then
+      echo "ed25519类型（\$HOME/.ssh/id_ed25519.pub）"
+    elif [ -f \$HOME/.ssh/id_rsa.pub ]; then
+      echo "rsa类型（\$HOME/.ssh/id_rsa.pub）"
+    else
+      echo "未生成"
+    fi
+  }
 
-    # 关键：eval 还原 generate_summary 函数（只维护一份定义）
-    eval "\$(echo '${ESCAPED_GENERATE_FUNC}' | base64 -d)"
+  # ======================== 集中配置定义（与脚本一致）========================
+  local CODEUP_REGISTRY="${ESCAPED_CODEUP_REGISTRY}"
+  local ALIAS_CONFIG=\$(echo '${ESCAPED_ALIAS_CONFIG}' | base64 -d)
+  local TOOLS_CONFIG=\$(echo '${ESCAPED_TOOLS_CONFIG}' | base64 -d)
+  local COMMANDS_CONFIG=\$(echo '${ESCAPED_COMMANDS_CONFIG}' | base64 -d)
+  local SUMMARY_TEMPLATE=\$(echo '${ESCAPED_SUMMARY_TEMPLATE}' | base64 -d)
 
-    # 解析别名配置
-    parse_alias_for_install_info() {
-      while IFS=':' read -r key value; do
-        [[ -z "\$key" || "\$key" =~ ^# ]] && continue
-        echo "  - \$key：\$value"
-      done <<< "\$ALIAS_CONFIG"
-    }
+  # 关键：eval 还原 generate_summary 函数（只维护一份定义）
+  eval "\$(echo '${ESCAPED_GENERATE_FUNC}' | base64 -d)"
 
-    # 解析命令配置
-    parse_commands_for_install_info() {
-      while IFS= read -r cmd; do
-        [[ -z "\$cmd" || "\$cmd" =~ ^# ]] && continue
-        echo "  - \$cmd"
-      done <<< "\$COMMANDS_CONFIG"
-    }
+  # 解析别名配置
+  parse_alias_for_install_info() {
+    while IFS=':' read -r key value; do
+      [[ -z "\$key" || "\$key" =~ ^# ]] && continue
+      echo "  - \$key：\$value"
+    done <<< "\$ALIAS_CONFIG"
+  }
 
-    echo -e "\n========================================================================"
-    echo "📋 工具安装验证结果："
+  # 解析命令配置
+  parse_commands_for_install_info() {
+    while IFS= read -r cmd; do
+      [[ -z "\$cmd" || "\$cmd" =~ ^# ]] && continue
+      echo "  - \$cmd"
+    done <<< "\$COMMANDS_CONFIG"
+  }
 
-    # 遍历工具清单验证
-    while IFS= read -r tool; do
-      [[ -z "\$tool" ]] && continue
-      verify_tool_for_install_info "\$tool"
-    done <<< "\$TOOLS_CONFIG"
+  echo -e "\n========================================================================"
+  echo "📋 工具安装验证结果："
 
-    echo -e "\n📋 自定义别名清单："
-    parse_alias_for_install_info
+  # 遍历工具清单验证
+  while IFS= read -r tool; do
+    [[ -z "\$tool" ]] && continue
+    verify_tool_for_install_info "\$tool"
+  done <<< "\$TOOLS_CONFIG"
 
-    echo -e "\n⚙️ 常用命令说明："
-    parse_commands_for_install_info
+  echo -e "\n📋 自定义别名清单："
+  parse_alias_for_install_info
 
-    echo -e "\n🎉 所有配置已生效！"
-    echo -e "\n\$(generate_summary)"
+  echo -e "\n⚙️ 常用命令说明："
+  parse_commands_for_install_info
+
+  echo -e "\n🎉 所有配置已生效！"
+  echo -e "\n\$(generate_summary)"
 }
 # ------------------------ 安装信息查看命令结束 ------------------------
 INSTALL_INFO_FUNCTION_EOF
