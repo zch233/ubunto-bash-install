@@ -941,7 +941,7 @@ if ! grep -q "# -------------------------- 安装信息查看命令 ------------
   ESCAPED_ALIAS_CONFIG=$(echo "$ALIAS_CONFIG" | base64)
   ESCAPED_TOOLS_CONFIG=$(echo "$TOOLS_CONFIG" | base64)
   ESCAPED_COMMANDS_CONFIG=$(echo "$COMMANDS_CONFIG" | base64)
-  ESCAPED_CODEUP_REGISTRY=$(printf '%q' "$CODEUP_REGISTRY")
+  ESCAPED_CODEUP_REGISTRY=$(echo "$CODEUP_REGISTRY" | base64)
 
   cat << INSTALL_INFO_FUNCTION_EOF  >> "$HOME/.bashrc"
 # -------------------------- 安装信息查看命令 --------------------------
@@ -982,7 +982,7 @@ install_info() {
   }
 
   # ======================== 集中配置定义（与脚本一致）========================
-  local CODEUP_REGISTRY="${ESCAPED_CODEUP_REGISTRY}"
+  local CODEUP_REGISTRY=\$(echo '${ESCAPED_CODEUP_REGISTRY}' | base64 -d)
   local ALIAS_CONFIG=\$(echo '${ESCAPED_ALIAS_CONFIG}' | base64 -d)
   local TOOLS_CONFIG=\$(echo '${ESCAPED_TOOLS_CONFIG}' | base64 -d)
   local COMMANDS_CONFIG=\$(echo '${ESCAPED_COMMANDS_CONFIG}' | base64 -d)
