@@ -85,24 +85,15 @@ generate_summary() {
   local git_email=$(git config --global --get user.email 2>/dev/null || echo "未配置")
   local ssh_key_info=$(get_ssh_key_info)
 
-  # 转义函数：转义 sed 特殊字符（| & \ /）
-  escape_sed_delimiter() {
-    local str="$1"
-    # 先转义反斜杠，再转义其他字符
-    str="${str//\\/\\\\}"
-    str="${str//|/\\|}"
-    str="${str//&/\\&}"
-    str="${str////\\/}"
-    echo "$str"
-  }
+  # 使用 bash 内建的字符串替换，避免 sed 分隔符导致的错误
+  local summary="$SUMMARY_TEMPLATE"
+  summary=${summary//\{MIRROR_NAME\}/$mirror_name}
+  summary=${summary//\{MIRROR_URL\}/$mirror_url}
+  summary=${summary//\{GIT_USER\}/$git_user}
+  summary=${summary//\{GIT_EMAIL\}/$git_email}
+  summary=${summary//\{SSH_KEY_INFO\}/$ssh_key_info}
 
-  # 替换模板占位符（使用 | 作为分隔符，并对替换值进行转义）
-  echo -e "$SUMMARY_TEMPLATE" | \
-    sed "s|{MIRROR_NAME}|$(escape_sed_delimiter "${mirror_name}")|g" | \
-    sed "s|{MIRROR_URL}|$(escape_sed_delimiter "${mirror_url}")|g" | \
-    sed "s|{GIT_USER}|$(escape_sed_delimiter "${git_user}")|g" | \
-    sed "s|{GIT_EMAIL}|$(escape_sed_delimiter "${git_email}")|g" | \
-    sed "s|{SSH_KEY_INFO}|$(escape_sed_delimiter "${ssh_key_info}")|g"
+  echo -e "$summary"
 }
 FUNC_EOF
 )
@@ -670,13 +661,14 @@ if [ "$SKIP_NPM_TOOLS" = false ] && command_exists "npm"; then
   BACKUP_FILE="$HOME/.bashrc.bak.$(date +%Y%m%d%H%M%S)"
   cp "$HOME/.bashrc" "$BACKUP_FILE"
   echo "✅ 已备份原有 .bashrc 到：$BACKUP_FILE"
-  if [ -f "$HOME/.npm-global" ]; then
-    rm -f "$HOME/.npm-global"
-    echo "⚠️ 已清理错误创建的 .npm-global 文件"
+  if [ -d "$HOME/.npm-global" ]; then
+    echo "ℹ️ 已创建 .npm-global 文件"
+  else
+    mkdir -p "$HOME/.npm-global"
+    npm config set prefix "$HOME/.npm-global"
+    echo "✅ 已设置 npm 全局目录为：$HOME/.npm-global"
   fi
-  mkdir -p "$HOME/.npm-global"
-  npm config set prefix "$HOME/.npm-global"
-  echo "✅ 已设置 npm 全局目录为：$HOME/.npm-global"
+
   # 加载刚写入的 .bashrc 配置，让 proxy-test/proxy-on/proxy-off 函数生效
   PATH_CONFIG="export PATH=\"$HOME/.npm-global/bin:\$PATH\""
   # 先检查是否已存在，避免重复添加
