@@ -50,7 +50,7 @@ node
 npm
 pnpm
 yarn
-yrm
+nrm
 tsc
 git-open
 fnm
@@ -61,7 +61,7 @@ COMMANDS_CONFIG=$(cat << 'COMMANDS_CONFIG_EOF'
 端口转发：port-add <端口> | port-del <端口> | port-reset | port-show
 代理控制：proxy-on | proxy-off | proxy-test
 fnm 命令：fnm install <版本> | fnm use <版本>
-镜像切换：yrm ls | yrm use <镜像名>
+镜像切换：nrm ls | nrm use <镜像名>
 COMMANDS_CONFIG_EOF
 )
 
@@ -79,8 +79,8 @@ SUMMARY_EOF
 
 GENERATE_SUMMARY_FUNC=$(cat << 'FUNC_EOF'
 generate_summary() {
-  local mirror_name=$(yrm current 2>/dev/null || echo "未配置")
-  local mirror_url=$(yrm ls 2>/dev/null | grep -E "^[[:space:]]*(\* |)$mirror_name" | sed -E "s/^[[:space:]]*(\* |)?$mirror_name[[:space:]]*-+[[:space:]]*//" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "$CODEUP_REGISTRY")
+  local mirror_name=$(nrm current | sed -n 's/^.*using \(.*\) registry\.$/\1/p' 2>/dev/null || echo "未配置")
+  local mirror_url=$(nrm ls 2>/dev/null | grep -E "^[[:space:]]*(\* |)$mirror_name" | sed -E "s/^[[:space:]]*(\* |)?$mirror_name[[:space:]]*-+[[:space:]]*//" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "$CODEUP_REGISTRY")
   local git_user=$(git config --global --get user.name 2>/dev/null || echo "未配置")
   local git_email=$(git config --global --get user.email 2>/dev/null || echo "未配置")
   local ssh_key_info=$(get_ssh_key_info)
@@ -222,9 +222,9 @@ safe_login() {
       echo -e "\n📢 【NPM 登录】请输入 Codeup 账号信息（用户名/密码/邮箱）："
       echo -e "📢 【NPM 登录】账号信息获取地址：\033[4;94mhttps://packages.aliyun.com/npm/npm-registry/guide\033[0m \n"
       # 强制设置 registry
-      npm config set registry "$clean_registry" > /dev/null 2>&1
+      npm config set registry "$registry" > /dev/null 2>&1
       # 直接执行登录，所有IO绑定当前终端
-      npm login --registry="$clean_registry" < /dev/tty > /dev/tty 2>&1
+      npm login --registry="$registry" --no-warnings < /dev/tty > /dev/tty 2>&1
       local exit_code=$?
       # 验证是否真的登录成功（通过读取 token）
       local token=$(npm config get "//${registry_core}/:_authToken" 2>/dev/null)
@@ -735,8 +735,8 @@ chromedriver_cdnurl="https://cdn.npmmirror.com/binaries/chromedriver"
 # ------------------------ 自定义配置结束 ------------------------
 ' >> "$HOME/.npmrc"
 
-  if npm install -g pnpm yarn yrm typescript git-open; then
-    echo "✅ 全局工具安装完成（pnpm/yarn/yrm/typescript/git-open）"
+  if npm install -g pnpm yarn nrm yrm typescript git-open --no-warnings; then
+    echo "✅ 全局工具安装完成（pnpm/yarn/nrm/yrm/typescript/git-open）"
   else
     echo "❌ 全局工具安装失败！是否跳过？"
     confirm_continue "继续执行其他步骤"
@@ -748,31 +748,31 @@ else
 fi
 
 # 5. npm registry 镜像配置（--skipNpmRegistry 跳过）
-if [ "$SKIP_NPM_REGISTRY" = false ] && command_exists "yrm"; then
+if [ "$SKIP_NPM_REGISTRY" = false ] && command_exists "nrm"; then
   echo -e "\n🔧 开始 npm registry 镜像配置..."
   # 检测 codeup 镜像是否已存在
-  if ! yrm ls | grep -q "codeup"; then
-    yrm add codeup "$CODEUP_REGISTRY"
+  if ! nrm ls | grep -q "codeup"; then
+    nrm add codeup "$CODEUP_REGISTRY"
     echo "✅ 已添加 Codeup 镜像源"
   else
     echo "✅ Codeup 镜像源已存在，无需重复添加"
   fi
 
   # 切换到 codeup 镜像
-  if yrm current | grep -q "codeup"; then
+  if nrm current | grep -q "codeup"; then
     echo "✅ 已使用 Codeup 镜像源"
   else
-    if yrm use codeup; then
-      echo "✅ yrm 切换到 Codeup 镜像：$(yrm current)"
+    if nrm use codeup; then
+      echo "✅ nrm 切换到 Codeup 镜像：$(nrm current | sed -n 's/^.*using \(.*\) registry\.$/\1/p' 2>/dev/null)"
     else
-      echo "❌ yrm 配置失败！是否跳过？"
+      echo "❌ nrm 配置失败！是否跳过？"
       confirm_continue "继续执行其他步骤"
     fi
   fi
 elif [ "$SKIP_NPM_REGISTRY" = true ]; then
   echo -e "\n⚠️  已跳过 npm registry 镜像配置"
 else
-  echo -e "\n⚠️  未检测到 yrm，跳过镜像配置"
+  echo -e "\n⚠️  未检测到 nrm，跳过镜像配置"
 fi
 
 # 6. npm 登录（--skipNpmLogin 跳过）
