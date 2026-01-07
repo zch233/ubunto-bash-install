@@ -224,7 +224,7 @@ safe_login() {
       # 强制设置 registry
       npm config set registry "$registry" > /dev/null 2>&1
       # 直接执行登录，所有IO绑定当前终端
-      npm login --registry="$registry" --no-warnings < /dev/tty > /dev/tty 2>&1
+      npm login --registry="$registry" < /dev/tty > /dev/tty 2>&1
       local exit_code=$?
       # 验证是否真的登录成功（通过读取 token）
       local token=$(npm config get "//${registry_core}/:_authToken" 2>/dev/null)
@@ -236,13 +236,11 @@ safe_login() {
       # 同步失败则触发交互式登录
       echo -e "\n📢 【Yarn 登录】复用 NPM 认证信息，可能需手动输入账号信息："
       echo -e "📢 【Yarn 登录】账号信息获取地址：\033[4;94mhttps://packages.aliyun.com/npm/npm-registry/guide\033[0m \n"
-      yarn login < /dev/tty > /dev/tty 2>&1
-      local exit_code=$?
-      # 验证 token
-      local yarn_token=$(yarn config get --home "//${registry_core}/:_authToken" 2>/dev/null)
-      if [ -n "$yarn_token" ] || [ $exit_code -eq 0 ]; then
-        login_success=true
-      fi
+      # 强制设置 registry
+      yarn config set registry "$registry" > /dev/null 2>&1
+      # 直接执行登录，所有IO绑定当前终端
+      yarn login --registry="$registry" < /dev/tty > /dev/tty 2>&1
+      login_success=true
       ;;
     *)
       echo "❌ 不支持的工具：$tool"
@@ -457,43 +455,43 @@ EOF
     proxy-test
   fi
 
-  # 替换 apt 源为阿里云源
-  if grep -q "archive.ubuntu.com" /etc/apt/sources.list; then
-    echo "=== 正在备份原有软件源..."
-    BACKUP_FILE="/etc/apt/sources.list.bak.$(date +%Y%m%d%H%M%S)"
-    sudo cp /etc/apt/sources.list "$BACKUP_FILE"
-    echo "备份文件已保存至：$BACKUP_FILE"
-    echo "=== 正在识别系统版本..."
-    CODENAME=$(lsb_release -c | awk '{print $2}')
-    if [ -z "$CODENAME" ]; then
-      echo "❌ 无法识别系统版本！请先执行 'lsb_release -c' 查看版本代号，再手动替换源。"
-      exit 1
-    fi
-    echo "当前系统版本代号：$CODENAME"
-    echo "=== 正在写入阿里云源..."
-    cat << EOF | sudo tee /etc/apt/sources.list > /dev/null
-deb http://mirrors.aliyun.com/ubuntu/ $CODENAME main restricted universe multiverse
-deb-src http://mirrors.aliyun.com/ubuntu/ $CODENAME main restricted universe multiverse
-
-deb http://mirrors.aliyun.com/ubuntu/ $CODENAME-security main restricted universe multiverse
-deb-src http://mirrors.aliyun.com/ubuntu/ $CODENAME-security main restricted universe multiverse
-
-deb http://mirrors.aliyun.com/ubuntu/ $CODENAME-updates main restricted universe multiverse
-deb-src http://mirrors.aliyun.com/ubuntu/ $CODENAME-updates main restricted universe multiverse
-
-deb http://mirrors.aliyun.com/ubuntu/ $CODENAME-backports main restricted universe multiverse
-deb-src http://mirrors.aliyun.com/ubuntu/ $CODENAME-backports main restricted universe multiverse
-EOF
-   echo "=== 正在导入阿里云 GPG 密钥..."
-   apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 40976EAF437D05B5 2>/dev/null || {
-    echo "⚠️  密钥导入失败（部分系统已内置），继续更新缓存..."
-   }
-   echo "=== 正在更新 apt 缓存（耐心等待，速度会显著提升）..."
-   sudo apt update -y
-   echo -e "\n🎉 阿里云源替换完成！下载速度已提速～"
-  else
-    echo -e "\n⚠️  已跳过替换 apt 源为阿里云源"
-  fi
+#  # 替换 apt 源为阿里云源
+#  if grep -q "archive.ubuntu.com" /etc/apt/sources.list; then
+#    echo "=== 正在备份原有软件源..."
+#    BACKUP_FILE="/etc/apt/sources.list.bak.$(date +%Y%m%d%H%M%S)"
+#    sudo cp /etc/apt/sources.list "$BACKUP_FILE"
+#    echo "备份文件已保存至：$BACKUP_FILE"
+#    echo "=== 正在识别系统版本..."
+#    CODENAME=$(lsb_release -c | awk '{print $2}')
+#    if [ -z "$CODENAME" ]; then
+#      echo "❌ 无法识别系统版本！请先执行 'lsb_release -c' 查看版本代号，再手动替换源。"
+#      exit 1
+#    fi
+#    echo "当前系统版本代号：$CODENAME"
+#    echo "=== 正在写入阿里云源..."
+#    cat << EOF | sudo tee /etc/apt/sources.list > /dev/null
+#deb http://mirrors.aliyun.com/ubuntu/ $CODENAME main restricted universe multiverse
+#deb-src http://mirrors.aliyun.com/ubuntu/ $CODENAME main restricted universe multiverse
+#
+#deb http://mirrors.aliyun.com/ubuntu/ $CODENAME-security main restricted universe multiverse
+#deb-src http://mirrors.aliyun.com/ubuntu/ $CODENAME-security main restricted universe multiverse
+#
+#deb http://mirrors.aliyun.com/ubuntu/ $CODENAME-updates main restricted universe multiverse
+#deb-src http://mirrors.aliyun.com/ubuntu/ $CODENAME-updates main restricted universe multiverse
+#
+#deb http://mirrors.aliyun.com/ubuntu/ $CODENAME-backports main restricted universe multiverse
+#deb-src http://mirrors.aliyun.com/ubuntu/ $CODENAME-backports main restricted universe multiverse
+#EOF
+#   echo "=== 正在导入阿里云 GPG 密钥..."
+#   apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 40976EAF437D05B5 2>/dev/null || {
+#    echo "⚠️  密钥导入失败（部分系统已内置），继续更新缓存..."
+#   }
+#   echo "=== 正在更新 apt 缓存（耐心等待，速度会显著提升）..."
+#   sudo apt update -y
+#   echo -e "\n🎉 阿里云源替换完成！下载速度已提速～"
+#  else
+#    echo -e "\n⚠️  已跳过替换 apt 源为阿里云源"
+#  fi
 
 else
   echo -e "\n⚠️  已跳过 WSL 代理配置"
@@ -644,9 +642,9 @@ EOF
       else
         echo "✅ fnm 环境变量已存在，无需重复配置"
       fi
+      echo "✅ fnm 配置完成"
+      source "$HOME/.bashrc"
   fi
-  echo "✅ fnm 配置完成"
-  source "$HOME/.bashrc"
 else
   echo -e "\n⚠️  已跳过 fnm 安装"
 fi
@@ -735,8 +733,8 @@ chromedriver_cdnurl="https://cdn.npmmirror.com/binaries/chromedriver"
 # ------------------------ 自定义配置结束 ------------------------
 ' >> "$HOME/.npmrc"
 
-  if npm install -g pnpm yarn nrm yrm typescript git-open --no-warnings; then
-    echo "✅ 全局工具安装完成（pnpm/yarn/nrm/yrm/typescript/git-open）"
+  if npm install -g pnpm yarn nrm typescript git-open; then
+    echo "✅ 全局工具安装完成（pnpm/yarn/nrm/typescript/git-open）"
   else
     echo "❌ 全局工具安装失败！是否跳过？"
     confirm_continue "继续执行其他步骤"
@@ -779,24 +777,17 @@ fi
 if [ "$SKIP_NPM_LOGIN" = false ] && command_exists "npm"; then
   echo -e "\n🔐 开始 npm 登录（Codeup 账号）..."
 
-  # 检测文件是否存在
-  if [ -f "$HOME/.npmrc" ]; then
-    # 检测是否已登录
-
-    if grep -qE "^//$(echo "$CODEUP_REGISTRY" | sed -e 's#^[a-zA-Z0-9]\+://##' -e 's#/npm-registry/.*$##' -e 's#\.#\\.#g' -e 's#/#\\/#g')/:_authToken=.+" "$HOME/.npmrc"; then
-        echo "✅ npm 已配置 Codeup 镜像认证（无需重复登录）"
-    else
-      # 调用安全登录函数
-      if safe_login "npm" "$CODEUP_REGISTRY"; then
-        echo "✅ npm 登录成功"
-      else
-        echo "❌ npm 登录失败"
-        confirm_continue "继续执行其他步骤"
-      fi
-    fi
+  # 检测是否已登录
+  if grep -qE "^//$(echo "$CODEUP_REGISTRY" | sed -e 's#^[a-zA-Z0-9]\+://##' -e 's#/npm-registry/.*$##' -e 's#\.#\\.#g' -e 's#/#\\/#g')/:_authToken=.+" "$HOME/.npmrc"; then
+      echo "✅ npm 已配置 Codeup 镜像认证（无需重复登录）"
   else
-    # 文件不存在时，强制返回未匹配（退出码 1）
-    echo ".npmrc 文件不存在"
+    # 调用安全登录函数
+    if safe_login "npm" "$CODEUP_REGISTRY"; then
+      echo "✅ npm 登录成功"
+    else
+      echo "❌ npm 登录失败"
+      confirm_continue "继续执行其他步骤"
+    fi
   fi
 elif [ "$SKIP_NPM_LOGIN" = true ]; then
   echo -e "\n⚠️  已跳过 npm 登录"
@@ -807,22 +798,17 @@ fi
 # 7. yarn 登录（--skipYarnLogin 跳过）
 if [ "$SKIP_YARN_LOGIN" = false ] && command_exists "yarn"; then
   echo -e "\n🔐 开始 yarn 登录（与 npm 账号一致）..."
-  if [ -f "$HOME/.yarnrc" ]; then
-    # 检测是否已登录
-    if grep -qE '^[[:space:]]*email[[:space:]]+["'"'"'][^"'"'"']+["'"'"']' "$HOME/.yarnrc" && grep -qE '^[[:space:]]*username[[:space:]]+["'"'"'][^"'"'"']+["'"'"']' "$HOME/.yarnrc"; then
-      echo "✅ yarn 已配置 Codeup 镜像认证（无需重复登录）"
-    else
-      # 调用安全登录函数
-      if safe_login "yarn" "$CODEUP_REGISTRY"; then
-        echo "✅ yarn 登录成功（复用 NPM 认证/手动登录）"
-      else
-        echo "❌ yarn 登录失败"
-        confirm_continue "是否跳过 yarn 登录继续执行其他步骤？"
-      fi
-    fi
+  # 检测是否已登录
+  if grep -qE '^[[:space:]]*email[[:space:]]+["'"'"'][^"'"'"']+["'"'"']' "$HOME/.yarnrc" && grep -qE '^[[:space:]]*username[[:space:]]+["'"'"'][^"'"'"']+["'"'"']' "$HOME/.yarnrc"; then
+    echo "✅ yarn 已配置 Codeup 镜像认证（无需重复登录）"
   else
-    # 文件不存在时，强制返回未匹配（退出码 1）
-    echo ".yarnrc 文件不存在"
+    # 调用安全登录函数
+    if safe_login "yarn" "$CODEUP_REGISTRY"; then
+      echo "✅ yarn 登录成功（复用 NPM 认证/手动登录）"
+    else
+      echo "❌ yarn 登录失败"
+      confirm_continue "是否跳过 yarn 登录继续执行其他步骤？"
+    fi
   fi
 elif [ "$SKIP_YARN_LOGIN" = true ]; then
   echo -e "\n⚠️  已跳过 yarn 登录"
