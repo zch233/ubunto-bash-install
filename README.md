@@ -73,7 +73,7 @@ Skip proxy set/get.
 Example:
 
 ```sh
-curl -fsSL https://cdn.jsdelivr.net/gh/zch233/ubunto-bash-install@master/install.sh | bash -s -- --skipAlias
+curl -fsSL https://cdn.jsdelivr.net/gh/zch233/ubunto-bash-install@master/install.sh | bash -s -- --skipNpmRegistry --skipNpmLogin --skipYarnLogin --skipGupoTools
 ```
 
 ## More info --help
