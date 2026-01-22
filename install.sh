@@ -521,7 +521,6 @@ alias ys="yarn dev | yarn serve"
 alias code="cursor"
 alias start="explorer.exe"
 alias open="explorer.exe"
-alias gg="gupo-deploy -a -p"
 
 # 端口转发函数：动态获取 172 开头的 WSL IP（无需指定网卡名）
 port-add() {
